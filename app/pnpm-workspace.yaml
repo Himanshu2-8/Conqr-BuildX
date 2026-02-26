@@ -1,1 +1,3 @@
 nodeLinker: hoisted
+
+storeDir: ../.pnpm-store/v10
