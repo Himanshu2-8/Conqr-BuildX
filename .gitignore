@@ -1,3 +1,12 @@
 node_modules
 .env
 dist
+# local env
+.env
+app/.env
+.env.*
+app/.env.*
+!.env.example
+
+# pnpm local store
+.pnpm-store/
