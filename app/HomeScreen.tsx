@@ -153,6 +153,9 @@ export function HomeScreen() {
           <Pressable style={styles.primaryButton} onPress={() => navigation.navigate("Run")}>
             <Text style={styles.primaryButtonText}>Start Run</Text>
           </Pressable>
+          <Pressable style={styles.tertiaryButton} onPress={() => navigation.navigate("Leaderboard")}>
+            <Text style={styles.tertiaryButtonText}>Leaderboard</Text>
+          </Pressable>
           <Pressable style={styles.secondaryButton} onPress={signOut}>
             <Text style={styles.secondaryButtonText}>Sign out</Text>
           </Pressable>
@@ -296,5 +299,18 @@ const styles = StyleSheet.create({
     color: "#e2e8f0",
     fontSize: 15,
     fontWeight: "600",
+  },
+  tertiaryButton: {
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: "center",
+    backgroundColor: "#1e293b",
+    borderWidth: 1,
+    borderColor: "#334155",
+  },
+  tertiaryButtonText: {
+    color: "#bae6fd",
+    fontSize: 15,
+    fontWeight: "700",
   },
 });

@@ -4,7 +4,7 @@ import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } fr
 import MapView, { Polygon, Polyline, type Region } from "react-native-maps";
 import { useRunTracker } from "./hooks/useRunTracker";
 import { useAuth } from "./context/AuthContext";
-import { saveRunSession, type SaveRunResult } from "./services/runSessions";
+import { saveRunSession, type SaveRunResult, updateSessionClaimedArea } from "./services/runSessions";
 import { fetchTerritory, updateTerritoryForRun, type TerritoryState } from "./services/territory";
 
 function formatDuration(totalSeconds: number) {
@@ -125,9 +125,12 @@ export function RunScreen() {
       });
       setLastSave(result);
       if (result.isValid) {
+        const previousAreaM2 = territory?.areaM2 ?? 0;
         const updatedTerritory = await updateTerritoryForRun(user.uid, points);
         if (updatedTerritory) {
           setTerritory(updatedTerritory);
+          const claimedAreaDeltaM2 = Math.max(updatedTerritory.areaM2 - previousAreaM2, 0);
+          await updateSessionClaimedArea(result.sessionId, claimedAreaDeltaM2);
         }
       }
       Alert.alert(

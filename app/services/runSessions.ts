@@ -1,4 +1,13 @@
-import { addDoc, collection, doc, serverTimestamp, writeBatch } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  increment,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  writeBatch,
+} from "firebase/firestore";
 import { db } from "../lib/firebase";
 import type { TrackPoint } from "../hooks/useRunTracker";
 
@@ -42,6 +51,7 @@ export async function saveRunSession(input: SaveRunInput): Promise<SaveRunResult
     distanceM: input.distanceMeters,
     paceMinPerKm: input.paceMinPerKm ?? null,
     pointsCount: input.points.length,
+    claimedAreaDeltaM2: 0,
     isValid,
     invalidReason,
     createdAt: serverTimestamp(),
@@ -66,9 +76,36 @@ export async function saveRunSession(input: SaveRunInput): Promise<SaveRunResult
     await batch.commit();
   }
 
+  if (isValid) {
+    const userRef = doc(db, "users", input.userId);
+    try {
+      await updateDoc(userRef, {
+        totalDistance: increment(input.distanceMeters),
+        updatedAt: serverTimestamp(),
+      });
+    } catch {
+      await setDoc(
+        userRef,
+        {
+          totalDistance: input.distanceMeters,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+  }
+
   return {
     sessionId: sessionRef.id,
     isValid,
     invalidReason,
   };
+}
+
+export async function updateSessionClaimedArea(sessionId: string, claimedAreaDeltaM2: number): Promise<void> {
+  const sessionRef = doc(db, "sessions", sessionId);
+  await updateDoc(sessionRef, {
+    claimedAreaDeltaM2: Math.max(claimedAreaDeltaM2, 0),
+    updatedAt: serverTimestamp(),
+  });
 }

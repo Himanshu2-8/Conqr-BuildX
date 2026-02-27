@@ -2,6 +2,7 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { HomeScreen } from "../HomeScreen";
 import { RunScreen } from "../RunScreen";
+import { LeaderboardScreen } from "../LeaderboardScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -17,6 +18,7 @@ export function AppStack() {
     >
       <Stack.Screen name="Home" component={HomeScreen} options={{ title: "Dashboard" }} />
       <Stack.Screen name="Run" component={RunScreen} options={{ title: "Live Run" }} />
+      <Stack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: "Leaderboard" }} />
     </Stack.Navigator>
   );
 }
