@@ -1,5 +1,6 @@
-import React from "react";
-import { Alert, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import React, { useEffect, useMemo, useRef } from "react";
+import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import MapView, { Polyline, type Region } from "react-native-maps";
 import { useRunTracker } from "./hooks/useRunTracker";
 
 function formatDuration(totalSeconds: number) {
@@ -18,8 +19,47 @@ function formatPace(paceMinPerKm: number | null) {
   return `${minutes}:${String(seconds).padStart(2, "0")} /km`;
 }
 
+const DEFAULT_REGION: Region = {
+  latitude: 37.7749,
+  longitude: -122.4194,
+  latitudeDelta: 0.01,
+  longitudeDelta: 0.01,
+};
+
 export function RunScreen() {
-  const { isRunning, elapsedSeconds, distanceMeters, paceMinPerKm, points, error, startRun, stopRun, resetRun } = useRunTracker();
+  const { isRunning, elapsedSeconds, distanceMeters, paceMinPerKm, points, error, startRun, stopRun, resetRun } =
+    useRunTracker();
+  const mapRef = useRef<MapView | null>(null);
+
+  const routeCoordinates = useMemo(
+    () => points.map((point) => ({ latitude: point.latitude, longitude: point.longitude })),
+    [points]
+  );
+
+  useEffect(() => {
+    if (!mapRef.current || routeCoordinates.length === 0) {
+      return;
+    }
+
+    if (routeCoordinates.length === 1) {
+      const coordinate = routeCoordinates[0];
+      mapRef.current.animateToRegion(
+        {
+          latitude: coordinate.latitude,
+          longitude: coordinate.longitude,
+          latitudeDelta: 0.008,
+          longitudeDelta: 0.008,
+        },
+        500
+      );
+      return;
+    }
+
+    mapRef.current.fitToCoordinates(routeCoordinates, {
+      edgePadding: { top: 80, right: 40, bottom: 80, left: 40 },
+      animated: true,
+    });
+  }, [routeCoordinates]);
 
   const onStart = async () => {
     await startRun();
@@ -32,11 +72,40 @@ export function RunScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.header}>
           <Text style={styles.title}>Run Tracker</Text>
-          <Text style={styles.subtitle}>Track your pace and distance live.</Text>
+          <Text style={styles.subtitle}>Live location + active route + post-run route.</Text>
         </View>
+
+        <View style={styles.mapCard}>
+          <MapView
+            ref={mapRef}
+            style={styles.map}
+            initialRegion={DEFAULT_REGION}
+            showsUserLocation
+            followsUserLocation
+            showsMyLocationButton
+          >
+            {routeCoordinates.length >= 2 ? (
+              <Polyline
+                coordinates={routeCoordinates}
+                strokeColor={isRunning ? "#22c55e" : "#38bdf8"}
+                strokeWidth={5}
+                lineCap="round"
+                lineJoin="round"
+              />
+            ) : null}
+          </MapView>
+          <Text style={styles.mapCaption}>
+            {isRunning ? "Current run polyline is updating live." : "Last route remains visible after finishing."}
+          </Text>
+        </View>
+
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Time</Text>
@@ -51,11 +120,14 @@ export function RunScreen() {
             <Text style={styles.statValue}>{formatPace(paceMinPerKm)}</Text>
           </View>
         </View>
+
         <View style={styles.metaRow}>
           <Text style={styles.metaText}>GPS points</Text>
           <Text style={styles.metaValue}>{points.length}</Text>
         </View>
+
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
         <View style={styles.actions}>
           {isRunning ? (
             <Pressable style={[styles.primaryButton, styles.stopButton]} onPress={onStop}>
@@ -70,7 +142,7 @@ export function RunScreen() {
             <Text style={styles.secondaryButtonText}>Reset</Text>
           </Pressable>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -82,8 +154,11 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
+  },
+  contentContainer: {
     padding: 20,
-    gap: 20,
+    gap: 16,
+    paddingBottom: 24,
   },
   header: {
     gap: 6,
@@ -97,13 +172,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#94a3b8",
   },
+  mapCard: {
+    borderRadius: 18,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#1f2937",
+    backgroundColor: "#0f172a",
+  },
+  map: {
+    height: 240,
+    width: "100%",
+  },
+  mapCaption: {
+    color: "#94a3b8",
+    fontSize: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
   statsGrid: {
-    gap: 12,
+    gap: 10,
   },
   statCard: {
     backgroundColor: "#111827",
     borderRadius: 18,
-    padding: 16,
+    padding: 14,
     gap: 6,
     borderWidth: 1,
     borderColor: "#1f2937",
@@ -115,7 +207,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   statValue: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "700",
     color: "#f8fafc",
   },
@@ -145,7 +237,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     gap: 12,
-    marginTop: "auto",
+    marginTop: 8,
   },
   primaryButton: {
     backgroundColor: "#22c55e",

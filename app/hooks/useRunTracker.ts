@@ -22,6 +22,9 @@ type RunTrackerState = {
 };
 
 const MIN_DISTANCE_DELTA_METERS = 3;
+const MAX_POINT_ACCURACY_METERS = 30;
+const MAX_SEGMENT_DISTANCE_METERS = 80;
+const MAX_SEGMENT_SPEED_MPS = 7.5;
 
 function toRadians(value: number) {
   return (value * Math.PI) / 180;
@@ -37,6 +40,24 @@ function haversineMeters(a: TrackPoint, b: TrackPoint) {
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
   return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+function isPoorAccuracy(point: TrackPoint) {
+  return typeof point.accuracy === "number" && point.accuracy > MAX_POINT_ACCURACY_METERS;
+}
+
+function isLikelyGpsJump(previous: TrackPoint, next: TrackPoint, segmentDistance: number) {
+  if (segmentDistance > MAX_SEGMENT_DISTANCE_METERS) {
+    return true;
+  }
+
+  const dtSeconds = (next.timestamp - previous.timestamp) / 1000;
+  if (dtSeconds <= 0) {
+    return true;
+  }
+
+  const impliedSpeed = segmentDistance / dtSeconds;
+  return impliedSpeed > MAX_SEGMENT_SPEED_MPS;
 }
 
 export function useRunTracker(): RunTrackerState {
@@ -77,6 +98,28 @@ export function useRunTracker(): RunTrackerState {
       return;
     }
 
+    setElapsedSeconds(0);
+    setDistanceMeters(0);
+    setPoints([]);
+
+    try {
+      const initialPosition = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const initialPoint: TrackPoint = {
+        latitude: initialPosition.coords.latitude,
+        longitude: initialPosition.coords.longitude,
+        accuracy: initialPosition.coords.accuracy ?? null,
+        speed: initialPosition.coords.speed ?? null,
+        timestamp: initialPosition.timestamp,
+      };
+      if (!isPoorAccuracy(initialPoint)) {
+        setPoints([initialPoint]);
+      }
+    } catch {
+      setError("Unable to get initial location. Tracking will continue when GPS updates arrive.");
+    }
+
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
@@ -104,13 +147,17 @@ export function useRunTracker(): RunTrackerState {
         };
 
         setPoints((prev) => {
+          if (isPoorAccuracy(nextPoint)) {
+            return prev;
+          }
+
           if (prev.length === 0) {
             return [nextPoint];
           }
 
           const lastPoint = prev[prev.length - 1];
           const segmentDistance = haversineMeters(lastPoint, nextPoint);
-          if (segmentDistance >= MIN_DISTANCE_DELTA_METERS) {
+          if (segmentDistance >= MIN_DISTANCE_DELTA_METERS && !isLikelyGpsJump(lastPoint, nextPoint, segmentDistance)) {
             setDistanceMeters((d) => d + segmentDistance);
             return [...prev, nextPoint];
           }
