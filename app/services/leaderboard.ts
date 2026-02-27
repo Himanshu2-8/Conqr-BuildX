@@ -24,6 +24,7 @@ type SessionDoc = {
   userId?: unknown;
   distanceM?: unknown;
   claimedAreaDeltaM2?: unknown;
+  isValid?: unknown;
 };
 
 type UserDoc = {
@@ -59,7 +60,6 @@ export async function fetchLeaderboard(metric: LeaderboardMetric, period: Leader
   const periodStart = getPeriodStart(period);
   const sessionsQuery = query(
     collection(db, "sessions"),
-    where("isValid", "==", true),
     where("startedAt", ">=", Timestamp.fromDate(periodStart))
   );
 
@@ -68,6 +68,10 @@ export async function fetchLeaderboard(metric: LeaderboardMetric, period: Leader
 
   sessionSnapshots.forEach((docSnap) => {
     const data = parseSession(docSnap);
+    const isValid = data.isValid === true;
+    if (!isValid) {
+      return;
+    }
     const userId = typeof data.userId === "string" ? data.userId : null;
     if (!userId) {
       return;

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 // @ts-ignore – react-native-maps is not installed in this workspace
 import MapView, { Polygon, Polyline, type Region } from "react-native-maps";
 import { useRunTracker } from "./hooks/useRunTracker";
