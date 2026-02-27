@@ -3,8 +3,30 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "rea
 import { useAuth } from "./context/AuthContext";
 import { useNavigation } from "@react-navigation/native";
 import { fetchDashboardSummary, type DashboardSummary } from "./services/dashboard";
+import MapView, { Polygon, type Region } from "react-native-maps";
 import { fetchAllTerritories, fetchTerritory, type TerritoryState } from "./services/territory";
 import { fetchLeaderboard, type LeaderboardRow } from "./services/leaderboard";
+
+const FALLBACK_REGION: Region = {
+  latitude: 20.5937,
+  longitude: 78.9629,
+  latitudeDelta: 12,
+  longitudeDelta: 12,
+};
+
+function getRegionFromPolygon(coords: TerritoryState["coordinates"]): Region {
+  const lats = coords.map((c) => c.latitude);
+  const lngs = coords.map((c) => c.longitude);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const latitude = (minLat + maxLat) / 2;
+  const longitude = (minLng + maxLng) / 2;
+  const latitudeDelta = Math.max((maxLat - minLat) * 1.6, 0.01);
+  const longitudeDelta = Math.max((maxLng - minLng) * 1.6, 0.01);
+  return { latitude, longitude, latitudeDelta, longitudeDelta };
+}
 
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -121,6 +143,8 @@ export function HomeScreen() {
     };
   }, []);
 
+  const territoryRegion = territory?.coordinates ? getRegionFromPolygon(territory.coordinates) : FALLBACK_REGION;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
@@ -188,14 +212,18 @@ export function HomeScreen() {
         <View style={styles.mapCard}>
           <Text style={styles.mapTitle}>Your Territory</Text>
           <MapView style={styles.map} initialRegion={territoryRegion} region={territoryRegion}>
-            {territory?.coordinates ? (
-              <Polygon
-                coordinates={territory.coordinates}
-                fillColor="rgba(34,197,94,0.25)"
-                strokeColor="#16a34a"
-                strokeWidth={2}
-              />
-            ) : null}
+            {allTerritories.map((shape, index) => {
+              const isOwn = !!user && shape.userId === user.uid;
+              return (
+                <Polygon
+                  key={`${shape.userId ?? "unknown"}-${index}`}
+                  coordinates={shape.coordinates}
+                  fillColor={isOwn ? "rgba(34,197,94,0.25)" : "rgba(251,191,36,0.18)"}
+                  strokeColor={isOwn ? "#16a34a" : "#f59e0b"}
+                  strokeWidth={isOwn ? 2 : 1}
+                />
+              );
+            })}
           </MapView>
           <Text style={styles.mapCaption}>
             {territory?.coordinates
@@ -401,10 +429,47 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginTop: 4,
   },
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 2,
+  },
+  summaryLabel: {
+    color: "#9fa8c2",
+    fontSize: 12,
+  },
+  summaryValue: {
+    color: "#f3f6ff",
+    fontSize: 13,
+    fontWeight: "700",
+  },
   lastRunText: {
     marginTop: 2,
     fontSize: 13,
     color: "#d1d8ea",
+  },
+  mapCard: {
+    backgroundColor: "#070707",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#4A090F",
+    padding: 12,
+    gap: 8,
+  },
+  mapTitle: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  map: {
+    width: "100%",
+    height: 170,
+    borderRadius: 12,
+  },
+  mapCaption: {
+    color: "#A7B0C8",
+    fontSize: 12,
   },
   leaderboardList: {
     gap: 10,
