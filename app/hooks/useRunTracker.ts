@@ -16,7 +16,7 @@ type RunTrackerState = {
   paceMinPerKm: number | null;
   points: TrackPoint[];
   error: string | null;
-  startRun: () => Promise<void>;
+  startRun: () => Promise<boolean>;
   stopRun: () => void;
   resetRun: () => void;
 };
@@ -71,55 +71,62 @@ export function useRunTracker(): RunTrackerState {
 
   const startRun = async () => {
     setError(null);
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") {
-      setError("Location permission denied.");
-      return;
-    }
-
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-    timerRef.current = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
-    }, 1000);
-
-    if (locationSubRef.current) {
-      locationSubRef.current.remove();
-    }
-
-    locationSubRef.current = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.BestForNavigation,
-        timeInterval: 3000,
-        distanceInterval: 2,
-      },
-      (position) => {
-        const nextPoint: TrackPoint = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy ?? null,
-          speed: position.coords.speed ?? null,
-          timestamp: position.timestamp,
-        };
-
-        setPoints((prev) => {
-          if (prev.length === 0) {
-            return [nextPoint];
-          }
-
-          const lastPoint = prev[prev.length - 1];
-          const segmentDistance = haversineMeters(lastPoint, nextPoint);
-          if (segmentDistance >= MIN_DISTANCE_DELTA_METERS) {
-            setDistanceMeters((d) => d + segmentDistance);
-            return [...prev, nextPoint];
-          }
-          return prev;
-        });
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setError("Location permission denied.");
+        return false;
       }
-    );
 
-    setIsRunning(true);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+      }, 1000);
+
+      if (locationSubRef.current) {
+        locationSubRef.current.remove();
+      }
+
+      locationSubRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 2000,
+          distanceInterval: 1,
+        },
+        (position) => {
+          const nextPoint: TrackPoint = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy ?? null,
+            speed: position.coords.speed ?? null,
+            timestamp: position.timestamp,
+          };
+
+          setPoints((prev) => {
+            if (prev.length === 0) {
+              return [nextPoint];
+            }
+
+            const lastPoint = prev[prev.length - 1];
+            const segmentDistance = haversineMeters(lastPoint, nextPoint);
+            if (segmentDistance >= MIN_DISTANCE_DELTA_METERS) {
+              setDistanceMeters((d) => d + segmentDistance);
+              return [...prev, nextPoint];
+            }
+            return prev;
+          });
+        }
+      );
+
+      setIsRunning(true);
+      return true;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to start GPS tracking";
+      setError(message);
+      return false;
+    }
   };
 
   const stopRun = () => {
