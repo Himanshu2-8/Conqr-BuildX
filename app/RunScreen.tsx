@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
 // @ts-ignore react-native-maps types are resolved at runtime in this Expo app
 import MapView, { Polygon, Polyline, type Region } from "react-native-maps";
 import { useRunTracker } from "./hooks/useRunTracker";
@@ -33,6 +34,7 @@ const DEFAULT_REGION: Region = {
 
 export function RunScreen() {
   const { user } = useAuth();
+  const navigation = useNavigation<any>();
   const { isRunning, elapsedSeconds, distanceMeters, paceMinPerKm, points, error, startRun, stopRun, resetRun } =
     useRunTracker();
   const [saving, setSaving] = React.useState(false);
@@ -164,10 +166,19 @@ export function RunScreen() {
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>Run Tracker</Text>
-          <Text style={styles.subtitle}>Live location + active route + post-run route.</Text>
+        <View style={styles.topBar}>
+          <Pressable
+            hitSlop={12}
+            android_ripple={{ color: "rgba(255,255,255,0.10)" }}
+            onPress={() => navigation.goBack()}
+            style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
+          >
+            <Text style={styles.backIcon}>‹</Text>
+          </Pressable>
+          <Text style={styles.topTitle}>Live Run</Text>
+          <View style={styles.backSpacer} />
         </View>
+        <Text style={styles.subtitle}>Live location + active route + post-run route.</Text>
 
         <View style={styles.mapCard}>
           <MapView
@@ -237,18 +248,37 @@ export function RunScreen() {
         <View style={styles.actions}>
           {isRunning ? (
             <Pressable
-              style={[styles.primaryButton, styles.stopButton, saving && styles.disabledButton]}
+              android_ripple={{ color: "rgba(255,255,255,0.12)" }}
+              hitSlop={8}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                styles.stopButton,
+                pressed && styles.pressed,
+                saving && styles.disabledButton,
+              ]}
               onPress={onStop}
               disabled={saving}
             >
               <Text style={styles.primaryButtonText}>Stop Run</Text>
             </Pressable>
           ) : (
-            <Pressable style={[styles.primaryButton, saving && styles.disabledButton]} onPress={onStart} disabled={saving}>
+            <Pressable
+              android_ripple={{ color: "rgba(255,255,255,0.12)" }}
+              hitSlop={8}
+              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, saving && styles.disabledButton]}
+              onPress={onStart}
+              disabled={saving}
+            >
               <Text style={styles.primaryButtonText}>Start Run</Text>
             </Pressable>
           )}
-          <Pressable style={[styles.secondaryButton, saving && styles.disabledButton]} onPress={resetRun} disabled={saving}>
+          <Pressable
+            android_ripple={{ color: "rgba(255,255,255,0.10)" }}
+            hitSlop={8}
+            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, saving && styles.disabledButton]}
+            onPress={resetRun}
+            disabled={saving}
+          >
             <Text style={styles.secondaryButtonText}>Reset</Text>
           </Pressable>
           {saving ? <Text style={styles.metaText}>Saving session...</Text> : null}
@@ -278,15 +308,25 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 14,
     paddingBottom: 24,
+    maxWidth: 520,
+    alignSelf: "center",
+    width: "100%",
   },
-  header: {
-    gap: 6,
+  pressed: { transform: [{ scale: 0.985 }], opacity: 0.95 },
+  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  topTitle: { color: "#ffffff", fontSize: 22, fontWeight: "900" },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(220, 38, 38, 0.10)",
+    borderWidth: 1,
+    borderColor: "rgba(220, 38, 38, 0.30)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#ffffff",
-  },
+  backIcon: { color: "#ffffff", fontSize: 28, fontWeight: "900", marginTop: -2 },
+  backSpacer: { width: 40, height: 40 },
   subtitle: {
     fontSize: 14,
     color: "#9CA3AF",

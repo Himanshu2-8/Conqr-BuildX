@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 export function LoginScreen() {
   const { signIn } = useAuth();
   const navigation = useNavigation<any>();
+  const passwordRef = React.useRef<TextInput | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -41,9 +42,17 @@ export function LoginScreen() {
               placeholderTextColor="#9CA3AF"
               autoCapitalize="none"
               keyboardType="email-address"
+              autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
+              keyboardAppearance="dark"
+              returnKeyType="next"
               value={email}
               onChangeText={setEmail}
+              selectionColor="#DC2626"
               style={styles.input}
+              blurOnSubmit={false}
+              onSubmitEditing={() => passwordRef.current?.focus()}
             />
           </View>
 
@@ -53,17 +62,36 @@ export function LoginScreen() {
               placeholder="********"
               placeholderTextColor="#9CA3AF"
               secureTextEntry
+              autoCorrect={false}
+              autoComplete="password"
+              textContentType="password"
+              keyboardAppearance="dark"
+              returnKeyType="go"
               value={password}
               onChangeText={setPassword}
+              selectionColor="#DC2626"
               style={styles.input}
+              ref={passwordRef}
+              onSubmitEditing={onLogin}
             />
           </View>
 
-          <Pressable style={[styles.primaryButton, loading && styles.primaryButtonDisabled]} onPress={onLogin} disabled={loading}>
+          <Pressable
+            android_ripple={{ color: "rgba(255,255,255,0.12)" }}
+            hitSlop={10}
+            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, loading && styles.primaryButtonDisabled]}
+            onPress={onLogin}
+            disabled={loading}
+          >
             <Text style={styles.primaryButtonText}>{loading ? "Logging in..." : "Login"}</Text>
           </Pressable>
 
-          <Pressable style={styles.secondaryButton} onPress={() => navigation.navigate("Signup")}>
+          <Pressable
+            android_ripple={{ color: "rgba(255,255,255,0.10)" }}
+            hitSlop={10}
+            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+            onPress={() => navigation.navigate("Signup")}
+          >
             <Text style={styles.secondaryButtonText}>Create account</Text>
           </Pressable>
         </LinearGradient>
@@ -79,7 +107,11 @@ const styles = StyleSheet.create({
     padding: 16,
     justifyContent: "center",
     gap: 14,
+    maxWidth: 520,
+    width: "100%",
+    alignSelf: "center",
   },
+  pressed: { transform: [{ scale: 0.985 }], opacity: 0.95 },
   brand: {
     alignItems: "center",
     gap: 6,
