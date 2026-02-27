@@ -218,6 +218,7 @@ export function HomeScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
+        <Text style={styles.screenTitle}>Dashboard</Text>
         <View style={styles.headerWrap}>
           <View style={styles.headerRow}>
             <View style={styles.avatar}>
@@ -403,6 +404,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   page: { padding: 16, paddingBottom: 120, gap: 14, maxWidth: 520, alignSelf: "center", width: "100%" },
   pressed: { transform: [{ scale: 0.98 }], opacity: 0.92 },
+  screenTitle: { color: "#fff", fontSize: 24, fontWeight: "900", marginBottom: 2 },
 
   headerWrap: {
     paddingBottom: 8,

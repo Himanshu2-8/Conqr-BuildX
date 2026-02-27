@@ -14,13 +14,15 @@ export function AppStack() {
       screenOptions={{
         headerStyle: { backgroundColor: "#000000" },
         headerTintColor: "#ffffff",
-        headerTitleStyle: { fontWeight: "800" },
+        headerTitleStyle: { fontWeight: "900", fontSize: 20 },
+        headerTitleAlign: "left",
         headerShadowVisible: false,
+        contentStyle: { backgroundColor: "#000000" },
       }}
     >
-      <Stack.Screen name="Home" component={HomeScreen} options={{ title: "Dashboard" }} />
-      <Stack.Screen name="Run" component={RunScreen} options={{ title: "Live Run" }} />
+      <Stack.Screen name="Home" component={HomeScreen} options={{ title: "Dashboard", headerShown: false }} />
       <Stack.Screen name="Quests" component={QuestsScreen} options={{ title: "Quests" }} />
+      <Stack.Screen name="Run" component={RunScreen} options={{ title: "Live Run", headerShown: false }} />
       <Stack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: "Leaderboard" }} />
     </Stack.Navigator>
   );
