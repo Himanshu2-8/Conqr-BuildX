@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
-import MapView, { Polyline, type Region } from "react-native-maps";
+// @ts-ignore – react-native-maps is not installed in this workspace
+import MapView, { Polygon, Polyline, type Region } from "react-native-maps";
 import { useRunTracker } from "./hooks/useRunTracker";
 import { useAuth } from "./context/AuthContext";
 import { saveRunSession, type SaveRunResult } from "./services/runSessions";
+import { fetchTerritory, updateTerritoryForRun, type TerritoryState } from "./services/territory";
 
 function formatDuration(totalSeconds: number) {
   const hrs = Math.floor(totalSeconds / 3600);
@@ -35,6 +37,8 @@ export function RunScreen() {
   const [saving, setSaving] = React.useState(false);
   const [runStartedAtMs, setRunStartedAtMs] = React.useState<number | null>(null);
   const [lastSave, setLastSave] = React.useState<SaveRunResult | null>(null);
+  const [territory, setTerritory] = React.useState<TerritoryState | null>(null);
+  const [territoryLoading, setTerritoryLoading] = React.useState(false);
   const mapRef = useRef<MapView | null>(null);
 
   const routeCoordinates = useMemo(
@@ -67,6 +71,29 @@ export function RunScreen() {
     });
   }, [routeCoordinates]);
 
+  useEffect(() => {
+    if (!user) {
+      setTerritory(null);
+      return;
+    }
+    let isActive = true;
+    setTerritoryLoading(true);
+    fetchTerritory(user.uid)
+      .then((data) => {
+        if (isActive) {
+          setTerritory(data);
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setTerritoryLoading(false);
+        }
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [user]);
+
   const onStart = async () => {
     const started = await startRun();
     if (started) {
@@ -97,6 +124,12 @@ export function RunScreen() {
         points,
       });
       setLastSave(result);
+      if (result.isValid) {
+        const updatedTerritory = await updateTerritoryForRun(user.uid, points);
+        if (updatedTerritory) {
+          setTerritory(updatedTerritory);
+        }
+      }
       Alert.alert(
         "Run saved",
         result.isValid
@@ -132,6 +165,14 @@ export function RunScreen() {
             followsUserLocation
             showsMyLocationButton
           >
+            {territory?.coordinates ? (
+              <Polygon
+                coordinates={territory.coordinates}
+                fillColor="rgba(56,189,248,0.2)"
+                strokeColor="#38bdf8"
+                strokeWidth={2}
+              />
+            ) : null}
             {routeCoordinates.length >= 2 ? (
               <Polyline
                 coordinates={routeCoordinates}
@@ -168,6 +209,13 @@ export function RunScreen() {
         </View>
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {territoryLoading ? <Text style={styles.metaText}>Loading territory...</Text> : null}
+        {territory ? (
+          <View style={styles.territoryCard}>
+            <Text style={styles.territoryTitle}>Territory</Text>
+            <Text style={styles.territoryText}>{Math.round(territory.areaM2).toLocaleString()} m² claimed</Text>
+          </View>
+        ) : null}
 
         <View style={styles.actions}>
           {isRunning ? (
@@ -332,6 +380,22 @@ const styles = StyleSheet.create({
   },
   saveText: {
     color: "#cbd5e1",
+    fontSize: 13,
+  },
+  territoryCard: {
+    borderWidth: 1,
+    borderColor: "#1f2937",
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+    backgroundColor: "#111827",
+  },
+  territoryTitle: {
+    color: "#f8fafc",
+    fontWeight: "700",
+  },
+  territoryText: {
+    color: "#bae6fd",
     fontSize: 13,
   },
 });
