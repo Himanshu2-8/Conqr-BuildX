@@ -6,7 +6,7 @@ import { AuthStack } from "./AuthStack";
 import { AppStack } from "./AppStack";
 
 export function RootNavigator() {
-  const { loading, session } = useAuth();
+  const { loading, user } = useAuth();
 
   if (loading) {
     return (
@@ -16,5 +16,5 @@ export function RootNavigator() {
     );
   }
 
-  return <NavigationContainer>{session ? <AppStack /> : <AuthStack />}</NavigationContainer>;
+  return <NavigationContainer>{user ? <AppStack /> : <AuthStack />}</NavigationContainer>;
 }

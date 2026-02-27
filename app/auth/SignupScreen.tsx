@@ -19,11 +19,6 @@ export function SignupScreen() {
       return;
     }
 
-    if (res.needsEmailConfirmation) {
-      Alert.alert("Verify email", res.message ?? "Please verify your email.");
-      return;
-    }
-
     Alert.alert("Success", "Account created.");
   };
 

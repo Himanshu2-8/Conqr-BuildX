@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabase";
+import type { User } from "firebase/auth";
+import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from "firebase/auth";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { auth, db } from "../lib/firebase";
 
 type SignUpInput = {
     email: string;
@@ -9,10 +11,10 @@ type SignUpInput = {
 };
 
 type AuthContextType = {
-    session: Session | null;
+    session: User | null;
     user: User | null;
     loading: boolean;
-    signUp: (input: SignUpInput) => Promise<{ success: boolean; message?: string; needsEmailConfirmation?: boolean }>;
+    signUp: (input: SignUpInput) => Promise<{ success: boolean; message?: string }>;
     signIn: (email: string, password: string) => Promise<{ success: boolean; message?: string }>;
     signOut: () => Promise<void>;
 }
@@ -20,55 +22,41 @@ type AuthContextType = {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-    const [session, setSession] = useState<Session | null>(null);
+    const [session, setSession] = useState<User | null>(null);
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState<boolean>(true);
+
+    const ensureUserProfile = async (currentUser: User, username?: string) => {
+        const userRef = doc(db, "users", currentUser.uid);
+        const existing = await getDoc(userRef);
+        if (existing.exists()) {
+            return;
+        }
+
+        await setDoc(userRef, {
+            uid: currentUser.uid,
+            email: currentUser.email ?? "",
+            username: username ?? currentUser.displayName ?? `user_${currentUser.uid.slice(0, 8)}`,
+            avatarUrl: "",
+            city: "",
+            totalDistance: 0,
+            totalArea: 0,
+            streak: 0,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+        });
+    };
+
     useEffect(() => {
-        let mounted = true;
-        const authListener = supabase.auth.onAuthStateChange((_event, newSession) => {
-            if (!mounted) {
-                return;
-            }
-            setSession(newSession);
-            setUser(newSession?.user ?? null);
+        const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+            setSession(firebaseUser);
+            setUser(firebaseUser);
+            setLoading(false);
         });
 
-        supabase.auth
-            .getSession()
-            .then(({ data, error }) => {
-                if (!mounted) {
-                    return;
-                }
-                if (error) {
-                    console.error("getSession failed:", error.message);
-                    setSession(null);
-                    setUser(null);
-                } else {
-                    setSession(data.session);
-                    setUser(data.session?.user ?? null);
-                }
-            })
-            .catch((err: unknown) => {
-                if (!mounted) {
-                    return;
-                }
-                const message = err instanceof Error ? err.message : "Unknown auth initialization error";
-                console.error("getSession exception:", message);
-                setSession(null);
-                setUser(null);
-            })
-            .finally(() => {
-                if (!mounted) {
-                    return;
-                }
-                setLoading(false);
-            });
-
-        return () => {
-            mounted = false;
-            authListener.data.subscription.unsubscribe();
-        };
+        return unsubscribe;
     }, []);
+
     const signUp: AuthContextType["signUp"] = async ({ email, password, username }) => {
         try {
             const cleanEmail = email.trim().toLowerCase();
@@ -82,47 +70,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 return { success: false, message: "Password must be at least 6 characters." };
             }
 
-            const { data, error } = await supabase.auth.signUp({
-                email: cleanEmail,
-                password,
-                options: {
-                    data: { username: cleanUsername ?? null },
-                },
-            });
-
-            if (error) return { success: false, message: error.message };
-
-            const userId = data.user?.id;
-            const hasSession = !!data.session;
-
-            if (userId) {
-                const { data: existingProfile, error: profileReadError } = await supabase
-                    .from("profiles")
-                    .select("id")
-                    .eq("id", userId)
-                    .maybeSingle();
-
-                if (profileReadError) {
-                    console.error("profile read failed on signup:", profileReadError.message);
-                }
-
-                if (!existingProfile) {
-                    const { error: profileUpsertError } = await supabase.from("profiles").upsert({
-                        id: userId,
-                        username: cleanUsername ?? `user_${userId.slice(0, 8)}`,
-                    });
-                    if (profileUpsertError) {
-                        console.error("profile upsert failed on signup:", profileUpsertError.message);
-                    }
-                }
+            const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+            if (cleanUsername) {
+                await updateProfile(cred.user, { displayName: cleanUsername });
             }
+            await ensureUserProfile(cred.user, cleanUsername);
 
             return {
                 success: true,
-                needsEmailConfirmation: !hasSession,
-                message: !hasSession
-                    ? "Signup successful. Verify your email to continue."
-                    : "Signup successful.",
+                message: "Signup successful.",
             };
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : "Unknown signup error";
@@ -138,35 +94,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 return { success: false, message: "Email and password are required." };
             }
 
-            const { data, error } = await supabase.auth.signInWithPassword({
-                email: cleanEmail,
-                password,
-            });
-
-            if (error) return { success: false, message: error.message };
-
-            const userId = data.user?.id;
-            if (userId) {
-                const { data: existingProfile, error: profileReadError } = await supabase
-                    .from("profiles")
-                    .select("id")
-                    .eq("id", userId)
-                    .maybeSingle();
-
-                if (profileReadError) {
-                    console.error("profile read failed on signin:", profileReadError.message);
-                }
-
-                if (!existingProfile) {
-                    const { error: profileUpsertError } = await supabase.from("profiles").upsert({
-                        id: userId,
-                        username: `user_${userId.slice(0, 8)}`,
-                    });
-                    if (profileUpsertError) {
-                        console.error("profile upsert failed on signin:", profileUpsertError.message);
-                    }
-                }
-            }
+            const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+            await ensureUserProfile(cred.user);
 
             return { success: true };
         } catch (err: unknown) {
@@ -178,10 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const signOut = async () => {
         try {
-            const { error } = await supabase.auth.signOut();
-            if (error) {
-                console.error("signout failed:", error.message);
-            }
+            await firebaseSignOut(auth);
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : "Unknown signout error";
             console.error("signout exception:", message);
