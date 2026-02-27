@@ -1,11 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import {
-  fetchLeaderboard,
+  subscribeLeaderboard,
   type LeaderboardMetric,
   type LeaderboardPeriod,
   type LeaderboardRow,
@@ -66,33 +65,30 @@ export function LeaderboardScreen() {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   const metricLabel = useMemo(() => (metric === "area" ? "Total Area" : "Total Distance"), [metric]);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const leaderboardRows = await fetchLeaderboard(metric, period);
-      setRows(leaderboardRows);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to load leaderboard";
-      setRows([]);
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  }, [metric, period]);
+  const liveText = updatedAt ? `Last updated ${updatedAt.toLocaleTimeString()}` : "Waiting for live rankings...";
 
   useEffect(() => {
-    void load();
-  }, [load]);
-
-  useFocusEffect(
-    useCallback(() => {
-      void load();
-    }, [load])
-  );
+    setLoading(true);
+    setError(null);
+    const unsubscribe = subscribeLeaderboard(
+      metric,
+      period,
+      (leaderboardRows) => {
+        setRows(leaderboardRows);
+        setLoading(false);
+        setUpdatedAt(new Date());
+      },
+      (err) => {
+        setRows([]);
+        setError(err.message || "Failed to load leaderboard");
+        setLoading(false);
+      }
+    );
+    return unsubscribe;
+  }, [metric, period]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -101,10 +97,16 @@ export function LeaderboardScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.h1}>Leaderboard</Text>
+          <View style={styles.headerTop}>
+            <Text style={styles.h1}>Leaderboard</Text>
+            <View style={styles.liveBadge}>
+              <Text style={styles.liveBadgeText}>LIVE</Text>
+            </View>
+          </View>
           <Text style={styles.sub}>
             Rank runners by {metricLabel.toLowerCase()} for this {period} window.
           </Text>
+          <Text style={styles.liveHint}>{liveText}</Text>
         </View>
 
         <GradientCard>
@@ -134,7 +136,7 @@ export function LeaderboardScreen() {
             <ToggleButton label="Weekly" value="weekly" selected={period} onSelect={setPeriod} />
           </View>
 
-          <Pressable style={({ pressed }) => [styles.refreshBtn, pressed && styles.pressed]} onPress={load}>
+          <Pressable style={({ pressed }) => [styles.refreshBtn, pressed && styles.pressed]}>
             <Text style={styles.refreshText}>Refresh</Text>
           </Pressable>
 
@@ -196,8 +198,10 @@ const styles = StyleSheet.create({
   pressed: { transform: [{ scale: 0.98 }], opacity: 0.92 },
 
   header: { gap: 6, paddingBottom: 8 },
+  headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   h1: { color: "#fff", fontSize: 28, fontWeight: "900" },
   sub: { color: "#9CA3AF", fontSize: 13, lineHeight: 18 },
+  liveHint: { color: "#9CA3AF", fontSize: 12 },
 
   card: {
     borderRadius: 14,
@@ -283,4 +287,18 @@ const styles = StyleSheet.create({
   valueWrap: { alignItems: "flex-end" },
   value: { color: "#E5E7EB", fontWeight: "900", fontSize: 12 },
   valueTop: { color: "#FCA5A5" },
+  liveBadge: {
+    borderRadius: 999,
+    backgroundColor: "rgba(220,38,38,0.20)",
+    borderWidth: 1,
+    borderColor: "rgba(220,38,38,0.60)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  liveBadgeText: {
+    color: "#FCA5A5",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+  },
 });

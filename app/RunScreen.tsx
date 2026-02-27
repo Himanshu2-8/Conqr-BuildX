@@ -6,7 +6,7 @@ import MapView, { Polygon, Polyline, type Region } from "react-native-maps";
 import { useRunTracker } from "./hooks/useRunTracker";
 import { useAuth } from "./context/AuthContext";
 import { saveRunSession, type SaveRunResult, updateSessionClaimedArea } from "./services/runSessions";
-import { fetchAllTerritories, fetchTerritory, updateTerritoryForRun, type TerritoryState } from "./services/territory";
+import { subscribeAllTerritories, updateTerritoryForRun, type TerritoryState } from "./services/territory";
 
 function formatDuration(totalSeconds: number) {
   const hrs = Math.floor(totalSeconds / 3600);
@@ -76,30 +76,21 @@ export function RunScreen() {
   useEffect(() => {
     if (!user) {
       setTerritory(null);
+      setAllTerritories([]);
       return;
     }
-    let isActive = true;
     setTerritoryLoading(true);
-    fetchTerritory(user.uid)
-      .then((data) => {
-        if (isActive) {
-          setTerritory(data);
-        }
-      })
-      .then(async () => {
-        const all = await fetchAllTerritories();
-        if (isActive) {
-          setAllTerritories(all);
-        }
-      })
-      .finally(() => {
-        if (isActive) {
-          setTerritoryLoading(false);
-        }
-      });
-    return () => {
-      isActive = false;
-    };
+    const unsubscribe = subscribeAllTerritories(
+      (rows) => {
+        setAllTerritories(rows);
+        setTerritory(rows.find((row) => row.userId === user.uid) ?? null);
+        setTerritoryLoading(false);
+      },
+      () => {
+        setTerritoryLoading(false);
+      }
+    );
+    return unsubscribe;
   }, [user]);
 
   const onStart = async () => {
@@ -139,8 +130,6 @@ export function RunScreen() {
           setTerritory(updatedTerritory);
           const claimedAreaDeltaM2 = Math.max(updatedTerritory.areaM2 - previousAreaM2, 0);
           await updateSessionClaimedArea(result.sessionId, claimedAreaDeltaM2);
-          const refreshedTerritories = await fetchAllTerritories();
-          setAllTerritories(refreshedTerritories);
         }
       }
       Alert.alert(

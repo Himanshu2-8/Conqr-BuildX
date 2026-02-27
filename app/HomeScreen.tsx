@@ -8,8 +8,8 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { useAuth } from "./context/AuthContext";
 import { fetchDashboardSummary, type DashboardSummary } from "./services/dashboard";
-import { fetchAllTerritories, fetchTerritory, type TerritoryState } from "./services/territory";
-import { fetchLeaderboard, type LeaderboardRow } from "./services/leaderboard";
+import { subscribeAllTerritories, type TerritoryState } from "./services/territory";
+import { subscribeLeaderboard, type LeaderboardRow } from "./services/leaderboard";
 
 const FALLBACK_REGION: Region = {
   latitude: 20.5937,
@@ -116,6 +116,8 @@ export function HomeScreen() {
   const [leaderboard, setLeaderboard] = React.useState<LeaderboardRow[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = React.useState(false);
   const [leaderboardError, setLeaderboardError] = React.useState<string | null>(null);
+  const [territoryUpdatedAt, setTerritoryUpdatedAt] = React.useState<Date | null>(null);
+  const [leaderboardUpdatedAt, setLeaderboardUpdatedAt] = React.useState<Date | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -152,59 +154,37 @@ export function HomeScreen() {
       return;
     }
 
-    let active = true;
     setTerritoryError(null);
-
-    Promise.allSettled([fetchTerritory(user.uid), fetchAllTerritories()])
-      .then(([ownResult, allResult]) => {
-        if (!active) return;
-
-        if (ownResult.status === "fulfilled") {
-          setTerritory(ownResult.value);
-        } else {
-          const message = ownResult.reason instanceof Error ? ownResult.reason.message : "Failed to load your territory";
-          setTerritoryError(message);
-        }
-
-        if (allResult.status === "fulfilled") {
-          setAllTerritories(allResult.value);
-        } else {
-          const message = allResult.reason instanceof Error ? allResult.reason.message : "Failed to load all territories";
-          setTerritoryError((prev) => prev ?? message);
-        }
-      })
-      .catch((err: unknown) => {
-        if (!active) return;
-        const message = err instanceof Error ? err.message : "Failed to load territory";
-        setTerritoryError(message);
-      });
-
-    return () => {
-      active = false;
-    };
+    const unsubscribe = subscribeAllTerritories(
+      (rows) => {
+        setAllTerritories(rows);
+        setTerritory(rows.find((row) => row.userId === user.uid) ?? null);
+        setTerritoryUpdatedAt(new Date());
+      },
+      (err) => {
+        setTerritoryError(err.message || "Failed to load all territories");
+      }
+    );
+    return unsubscribe;
   }, [user]);
 
   useEffect(() => {
-    let active = true;
     setLeaderboardLoading(true);
     setLeaderboardError(null);
-
-    fetchLeaderboard("distance", "weekly")
-      .then((rows) => {
-        if (active) setLeaderboard(rows.slice(0, 5));
-      })
-      .catch((err: unknown) => {
-        if (!active) return;
-        const message = err instanceof Error ? err.message : "Failed to load leaderboard";
-        setLeaderboardError(message);
-      })
-      .finally(() => {
-        if (active) setLeaderboardLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
+    const unsubscribe = subscribeLeaderboard(
+      "distance",
+      "weekly",
+      (rows) => {
+        setLeaderboard(rows.slice(0, 5));
+        setLeaderboardLoading(false);
+        setLeaderboardUpdatedAt(new Date());
+      },
+      (err) => {
+        setLeaderboardError(err.message || "Failed to load leaderboard");
+        setLeaderboardLoading(false);
+      }
+    );
+    return unsubscribe;
   }, []);
 
   const name = user?.displayName || "Runner";
@@ -215,9 +195,28 @@ export function HomeScreen() {
   const lastRunText = summary?.lastRun
     ? `${(summary.lastRun.distanceM / 1000).toFixed(2)} km - ${Math.round(summary.lastRun.durationSec)}s`
     : "No runs yet";
+  const homeLeaderboardRows = React.useMemo(() => {
+    const topThree = leaderboard.slice(0, 3);
+    if (!user?.uid) {
+      return topThree;
+    }
+    const me = leaderboard.find((row) => row.userId === user.uid);
+    if (!me) {
+      return topThree;
+    }
+    if (topThree.some((row) => row.userId === me.userId)) {
+      return topThree;
+    }
+    return [...topThree, me];
+  }, [leaderboard, user?.uid]);
+  const territoryLiveText = territoryUpdatedAt ? `Last updated ${territoryUpdatedAt.toLocaleTimeString()}` : "Waiting for live map...";
+  const leaderboardLiveText = leaderboardUpdatedAt
+    ? `Last updated ${leaderboardUpdatedAt.toLocaleTimeString()}`
+    : "Waiting for live rankings...";
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
         <View style={styles.headerWrap}>
           <View style={styles.headerRow}>
@@ -256,6 +255,9 @@ export function HomeScreen() {
               <Image source={require("./assets/map.png")} style={styles.cardIconImage} />
             </View>
             <Text style={styles.cardTitle}>Your Territory</Text>
+            <View style={styles.liveBadge}>
+              <Text style={styles.liveBadgeText}>LIVE</Text>
+            </View>
           </View>
 
           <GradientBox style={styles.bigBox}>
@@ -312,6 +314,7 @@ export function HomeScreen() {
               </MapView>
             </View>
             <Text style={styles.hint}>Territories shown: {allTerritories.length}</Text>
+            <Text style={styles.hint}>{territoryLiveText}</Text>
             <Text style={styles.hint}>
               {territory?.coordinates
                 ? `${Math.round(territory.areaM2).toLocaleString()} m2 claimed so far`
@@ -335,9 +338,13 @@ export function HomeScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>Leaderboard</Text>
-              <Text style={styles.hint}>Top runners this week</Text>
+              <Text style={styles.hint}>Top 3 + your position</Text>
+            </View>
+            <View style={styles.liveBadge}>
+              <Text style={styles.liveBadgeText}>LIVE</Text>
             </View>
           </View>
+          <Text style={styles.hint}>{leaderboardLiveText}</Text>
 
           {leaderboardLoading ? <Text style={styles.hint}>Loading rankings...</Text> : null}
           {leaderboardError ? <Text style={styles.error}>{leaderboardError}</Text> : null}
@@ -346,7 +353,7 @@ export function HomeScreen() {
           ) : null}
 
           <View style={{ gap: 10, marginTop: 8 }}>
-            {leaderboard.map((row) => {
+            {homeLeaderboardRows.map((row) => {
               const isMe = row.userId === user?.uid;
               const badge = getRankBadge(row.rank);
               return (
@@ -374,40 +381,53 @@ export function HomeScreen() {
             })}
           </View>
         </GradientCard>
+
       </ScrollView>
+      <View style={styles.footerNav}>
+        <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Quests")}>
+          <MaterialCommunityIcons name="flag-checkered" size={16} color="#FCA5A5" />
+          <Text style={styles.footerBtnText}>Quests</Text>
+        </Pressable>
+        <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Leaderboard")}>
+          <MaterialCommunityIcons name="trophy" size={16} color="#FCA5A5" />
+          <Text style={styles.footerBtnText}>Leaderboard</Text>
+        </Pressable>
+      </View>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#000" },
-  page: { padding: 16, paddingBottom: 28, gap: 14, maxWidth: 520, alignSelf: "center", width: "100%" },
+  screen: { flex: 1 },
+  page: { padding: 16, paddingBottom: 120, gap: 14, maxWidth: 520, alignSelf: "center", width: "100%" },
   pressed: { transform: [{ scale: 0.98 }], opacity: 0.92 },
 
   headerWrap: {
-    paddingBottom: 14,
+    paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(127, 29, 29, 0.30)",
   },
-  headerRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  headerRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   avatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     backgroundColor: "#B91C1C",
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { color: "#fff", fontWeight: "800", fontSize: 16 },
+  avatarText: { color: "#fff", fontWeight: "800", fontSize: 14 },
   headerMain: { flex: 1, minWidth: 0, gap: 2 },
-  h1: { color: "#fff", fontSize: 20, fontWeight: "800" },
+  h1: { color: "#fff", fontSize: 18, fontWeight: "800" },
   h1Accent: { color: "#DC2626" },
-  sub: { color: "#9CA3AF", fontSize: 12 },
+  sub: { color: "#9CA3AF", fontSize: 11 },
 
   signOutBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: "rgba(220, 38, 38, 0.10)",
     borderWidth: 1,
     borderColor: "rgba(220, 38, 38, 0.30)",
@@ -415,8 +435,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   signOutIconImage: {
-    width: 18,
-    height: 18,
+    width: 15,
+    height: 15,
     tintColor: "#DC2626",
   },
 
@@ -527,4 +547,44 @@ const styles = StyleSheet.create({
   lbValue: { color: "#fff", fontSize: 14, fontWeight: "900" },
   lbValueMe: { color: "#FCA5A5" },
   lbUnit: { color: "#9CA3AF", fontSize: 12, marginTop: 1 },
+  liveBadge: {
+    borderRadius: 999,
+    backgroundColor: "rgba(220,38,38,0.20)",
+    borderWidth: 1,
+    borderColor: "rgba(220,38,38,0.60)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  liveBadgeText: {
+    color: "#FCA5A5",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+  },
+  footerNav: {
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 8,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(127, 29, 29, 0.30)",
+    backgroundColor: "#000",
+  },
+  footerBtn: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(220,38,38,0.55)",
+    backgroundColor: "rgba(69, 10, 10, 0.22)",
+    paddingVertical: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
+  },
+  footerBtnText: {
+    color: "#FCA5A5",
+    fontSize: 11,
+    fontWeight: "800",
+  },
 });

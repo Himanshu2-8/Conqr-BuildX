@@ -2,9 +2,11 @@ import {
   collection,
   documentId,
   getDocs,
+  onSnapshot,
   query,
   Timestamp,
   where,
+  type QuerySnapshot,
   type QueryDocumentSnapshot,
   type DocumentData,
 } from "firebase/firestore";
@@ -56,14 +58,10 @@ function parseSession(docSnap: QueryDocumentSnapshot<DocumentData>): SessionDoc 
   return docSnap.data() as SessionDoc;
 }
 
-export async function fetchLeaderboard(metric: LeaderboardMetric, period: LeaderboardPeriod): Promise<LeaderboardRow[]> {
-  const periodStart = getPeriodStart(period);
-  const sessionsQuery = query(
-    collection(db, "sessions"),
-    where("startedAt", ">=", Timestamp.fromDate(periodStart))
-  );
-
-  const sessionSnapshots = await getDocs(sessionsQuery);
+async function aggregateLeaderboardFromSessionSnapshot(
+  sessionSnapshots: QuerySnapshot<DocumentData>,
+  metric: LeaderboardMetric
+): Promise<LeaderboardRow[]> {
   const totals = new Map<string, number>();
 
   sessionSnapshots.forEach((docSnap) => {
@@ -113,4 +111,44 @@ export async function fetchLeaderboard(metric: LeaderboardMetric, period: Leader
     username: usernames.get(userId) ?? `Runner ${userId.slice(0, 6)}`,
     value,
   }));
+}
+
+export async function fetchLeaderboard(metric: LeaderboardMetric, period: LeaderboardPeriod): Promise<LeaderboardRow[]> {
+  const periodStart = getPeriodStart(period);
+  const sessionsQuery = query(
+    collection(db, "sessions"),
+    where("startedAt", ">=", Timestamp.fromDate(periodStart))
+  );
+
+  const sessionSnapshots = await getDocs(sessionsQuery);
+  return aggregateLeaderboardFromSessionSnapshot(sessionSnapshots, metric);
+}
+
+export function subscribeLeaderboard(
+  metric: LeaderboardMetric,
+  period: LeaderboardPeriod,
+  onData: (rows: LeaderboardRow[]) => void,
+  onError?: (error: Error) => void
+) {
+  const periodStart = getPeriodStart(period);
+  const sessionsQuery = query(collection(db, "sessions"), where("startedAt", ">=", Timestamp.fromDate(periodStart)));
+
+  return onSnapshot(
+    sessionsQuery,
+    async (sessionSnapshots) => {
+      try {
+        const rows = await aggregateLeaderboardFromSessionSnapshot(sessionSnapshots, metric);
+        onData(rows);
+      } catch (error) {
+        if (onError) {
+          onError(error as Error);
+        }
+      }
+    },
+    (error) => {
+      if (onError) {
+        onError(error as Error);
+      }
+    }
+  );
 }

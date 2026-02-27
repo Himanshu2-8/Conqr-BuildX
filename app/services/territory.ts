@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import type { TrackPoint } from "../hooks/useRunTracker";
 
@@ -122,6 +122,10 @@ export async function fetchTerritory(userId: string): Promise<TerritoryState | n
 
 export async function fetchAllTerritories(): Promise<TerritoryState[]> {
   const snapshot = await getDocs(collection(db, "territories"));
+  return parseTerritoriesSnapshot(snapshot);
+}
+
+function parseTerritoriesSnapshot(snapshot: { forEach: (cb: (docSnap: any) => void) => void }): TerritoryState[] {
   const territories: TerritoryState[] = [];
 
   snapshot.forEach((docSnap) => {
@@ -138,6 +142,23 @@ export async function fetchAllTerritories(): Promise<TerritoryState[]> {
   });
 
   return territories;
+}
+
+export function subscribeAllTerritories(
+  onData: (territories: TerritoryState[]) => void,
+  onError?: (error: Error) => void
+) {
+  return onSnapshot(
+    collection(db, "territories"),
+    (snapshot) => {
+      onData(parseTerritoriesSnapshot(snapshot));
+    },
+    (error) => {
+      if (onError) {
+        onError(error as Error);
+      }
+    }
+  );
 }
 
 export async function updateTerritoryForRun(userId: string, points: TrackPoint[]): Promise<TerritoryState | null> {
