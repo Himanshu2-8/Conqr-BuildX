@@ -1,8 +1,10 @@
 import React, { useEffect } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import MapView, { Polygon, type Region } from "react-native-maps";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { useAuth } from "./context/AuthContext";
 import { fetchDashboardSummary, type DashboardSummary } from "./services/dashboard";
@@ -63,6 +65,40 @@ function getColorForUser(userId: string | undefined, isOwn: boolean) {
   ];
   const hash = userId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return palette[hash % palette.length];
+}
+
+function getRankBadge(rank: number) {
+  if (rank === 1) {
+    return { icon: "trophy", color: "#FACC15" };
+  }
+  if (rank === 2) {
+    return { icon: "trophy", color: "#CBD5E1" };
+  }
+  if (rank === 3) {
+    return { icon: "trophy", color: "#D97706" };
+  }
+  return { icon: "medal-outline", color: "#9CA3AF" };
+}
+
+function GradientCard({ children }: { children: React.ReactNode }) {
+  return (
+    <LinearGradient colors={["#1a0205", "#050505"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.card}>
+      {children}
+    </LinearGradient>
+  );
+}
+
+function GradientBox({ children, style }: { children: React.ReactNode; style?: object }) {
+  return (
+    <LinearGradient
+      colors={["rgba(139,0,0,0.25)", "rgba(0,0,0,0.45)"]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={[styles.gradientBoxBase, style]}
+    >
+      {children}
+    </LinearGradient>
+  );
 }
 
 export function HomeScreen() {
@@ -197,32 +233,32 @@ export function HomeScreen() {
               </Text>
             </View>
             <Pressable onPress={signOut} style={({ pressed }) => [styles.signOutBtn, pressed && styles.pressed]}>
-              <Text style={styles.signOutIcon}>{">"}</Text>
+              <Image source={require("./assets/logout.png")} style={styles.signOutIconImage} />
             </Pressable>
           </View>
         </View>
 
-        <View style={styles.card}>
+        <GradientCard>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}>
-              <Text style={styles.icon}>*</Text>
+              <Image source={require("./assets/target.png")} style={styles.cardIconImage} />
             </View>
             <Text style={styles.cardTitle}>Today's Focus</Text>
           </View>
           <Text style={styles.cardBody}>Stay consistent. Every run adds territory.</Text>
           {loadingSummary ? <Text style={styles.hint}>Loading your progress...</Text> : null}
           {summaryError ? <Text style={styles.error}>{summaryError}</Text> : null}
-        </View>
+        </GradientCard>
 
-        <View style={styles.card}>
+        <GradientCard>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}>
-              <Text style={styles.icon}>#</Text>
+              <Image source={require("./assets/map.png")} style={styles.cardIconImage} />
             </View>
             <Text style={styles.cardTitle}>Your Territory</Text>
           </View>
 
-          <View style={styles.bigBox}>
+          <GradientBox style={styles.bigBox}>
             <View style={styles.bigTop}>
               <Text style={styles.dimLabel}>Total Distance</Text>
               <Text style={styles.dimIcon}>+</Text>
@@ -230,19 +266,19 @@ export function HomeScreen() {
             <Text style={styles.bigValue}>
               {totalKm.toFixed(1)} <Text style={styles.bigUnit}>km</Text>
             </Text>
-          </View>
+          </GradientBox>
 
           <View style={styles.grid2}>
-            <View style={styles.smallBox}>
+            <GradientBox style={styles.smallBox}>
               <Text style={styles.dimLabel}>Total Runs</Text>
               <Text style={styles.smallValue}>{summary ? summary.totalRuns : 0}</Text>
-            </View>
-            <View style={styles.smallBox}>
+            </GradientBox>
+            <GradientBox style={styles.smallBox}>
               <Text style={styles.dimLabel}>Territory Area</Text>
               <Text style={styles.smallValue}>
                 {territory ? Math.round(territory.areaM2).toLocaleString() : 0} <Text style={styles.smallUnit}>m2</Text>
               </Text>
-            </View>
+            </GradientBox>
           </View>
 
           <View style={styles.metaRow}>
@@ -283,19 +319,19 @@ export function HomeScreen() {
             </Text>
             {territoryError ? <Text style={styles.error}>{territoryError}</Text> : null}
           </View>
-        </View>
+        </GradientCard>
 
         <Pressable style={({ pressed }) => [styles.startBtn, pressed && styles.startBtnPressed]} onPress={() => navigation.navigate("Run")}>
           <View style={styles.playCircle}>
-            <Text style={styles.playIcon}>{">"}</Text>
+            <MaterialCommunityIcons name="play" size={18} color="#fff" style={styles.playIcon} />
           </View>
           <Text style={styles.startText}>Start Run</Text>
         </Pressable>
 
-        <View style={styles.card}>
+        <GradientCard>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}>
-              <Text style={styles.icon}>^</Text>
+              <MaterialCommunityIcons name="trophy" size={18} color="#DC2626" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>Leaderboard</Text>
@@ -312,10 +348,11 @@ export function HomeScreen() {
           <View style={{ gap: 10, marginTop: 8 }}>
             {leaderboard.map((row) => {
               const isMe = row.userId === user?.uid;
+              const badge = getRankBadge(row.rank);
               return (
                 <View key={row.userId} style={[styles.lbRow, isMe && styles.lbRowMe]}>
                   <View style={styles.lbRankWrap}>
-                    <Text style={styles.lbRank}>#{row.rank}</Text>
+                    <MaterialCommunityIcons name={badge.icon as any} size={16} color={badge.color} />
                   </View>
 
                   <View style={[styles.lbAvatar, isMe && styles.lbAvatarMe]}>
@@ -326,7 +363,6 @@ export function HomeScreen() {
                     <Text style={[styles.lbName, isMe && styles.lbNameMe]} numberOfLines={1}>
                       {row.username}
                     </Text>
-                    <Text style={styles.lbSub}>Rank #{row.rank}</Text>
                   </View>
 
                   <View style={styles.lbValueWrap}>
@@ -337,7 +373,7 @@ export function HomeScreen() {
               );
             })}
           </View>
-        </View>
+        </GradientCard>
       </ScrollView>
     </SafeAreaView>
   );
@@ -378,7 +414,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  signOutIcon: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  signOutIconImage: {
+    width: 18,
+    height: 18,
+    tintColor: "#DC2626",
+  },
 
   card: {
     borderRadius: 14,
@@ -396,14 +436,22 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  cardIconImage: {
+    width: 16,
+    height: 16,
+    tintColor: "#DC2626",
+  },
   icon: { fontSize: 16, color: "#fff" },
   cardTitle: { color: "#fff", fontSize: 18, fontWeight: "700" },
   cardBody: { color: "#D1D5DB", fontSize: 14, lineHeight: 20, marginTop: 10 },
 
   hint: { color: "#9CA3AF", fontSize: 12, marginTop: 8 },
   error: { color: "#FB7185", fontSize: 12, marginTop: 8 },
+  gradientBoxBase: {
+    borderRadius: 12,
+  },
 
-  bigBox: { backgroundColor: "rgba(0,0,0,0.40)", borderRadius: 12, padding: 14, marginTop: 12 },
+  bigBox: { padding: 14, marginTop: 12 },
   bigTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   dimLabel: { color: "#9CA3AF", fontSize: 13 },
   dimIcon: { fontSize: 14, color: "#9CA3AF" },
@@ -411,7 +459,7 @@ const styles = StyleSheet.create({
   bigUnit: { color: "#9CA3AF", fontWeight: "700", fontSize: 14 },
 
   grid2: { flexDirection: "row", gap: 10, marginTop: 10 },
-  smallBox: { flex: 1, backgroundColor: "rgba(0,0,0,0.40)", borderRadius: 12, padding: 12 },
+  smallBox: { flex: 1, padding: 12 },
   smallValue: { color: "#fff", fontSize: 18, fontWeight: "800", marginTop: 6 },
   smallUnit: { color: "#9CA3AF", fontSize: 12, fontWeight: "700" },
 
@@ -445,7 +493,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  playIcon: { color: "#fff", fontSize: 18, fontWeight: "900", marginLeft: 2 },
+  playIcon: { marginLeft: 2 },
   startText: { color: "#fff", fontSize: 20, fontWeight: "900" },
 
   lbRow: {
@@ -461,8 +509,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(220, 38, 38, 0.55)",
   },
-  lbRankWrap: { width: 38, alignItems: "center" },
-  lbRank: { color: "#E5E7EB", fontWeight: "800" },
+  lbRankWrap: { width: 38, alignItems: "center", justifyContent: "center" },
   lbAvatar: {
     width: 36,
     height: 36,
@@ -476,7 +523,6 @@ const styles = StyleSheet.create({
   lbMain: { flex: 1, minWidth: 0 },
   lbName: { color: "#fff", fontSize: 14, fontWeight: "700" },
   lbNameMe: { color: "#FCA5A5" },
-  lbSub: { color: "#9CA3AF", fontSize: 12, marginTop: 2 },
   lbValueWrap: { alignItems: "flex-end" },
   lbValue: { color: "#fff", fontSize: 14, fontWeight: "900" },
   lbValueMe: { color: "#FCA5A5" },

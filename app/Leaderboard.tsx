@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   fetchLeaderboard,
   type LeaderboardMetric,
@@ -11,7 +13,7 @@ import {
 
 function formatMetricValue(metric: LeaderboardMetric, value: number): string {
   if (metric === "distance") return `${(value / 1000).toFixed(2)} km`;
-  return `${Math.round(value).toLocaleString()} m²`;
+  return `${Math.round(value).toLocaleString()} m2`;
 }
 
 function getInitials(name: string) {
@@ -19,6 +21,21 @@ function getInitials(name: string) {
   if (parts.length === 0) return "R";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function getRankBadge(rank: number) {
+  if (rank === 1) return { icon: "trophy", color: "#FACC15" };
+  if (rank === 2) return { icon: "trophy", color: "#CBD5E1" };
+  if (rank === 3) return { icon: "trophy", color: "#D97706" };
+  return { icon: "medal-outline", color: "#9CA3AF" };
+}
+
+function GradientCard({ children }: { children: React.ReactNode }) {
+  return (
+    <LinearGradient colors={["#1a0205", "#050505"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.card}>
+      {children}
+    </LinearGradient>
+  );
 }
 
 type ToggleButtonProps<T extends string> = {
@@ -83,7 +100,6 @@ export function LeaderboardScreen() {
         contentContainerStyle={[styles.page, { paddingBottom: 30 + insets.bottom }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
         <View style={styles.header}>
           <Text style={styles.h1}>Leaderboard</Text>
           <Text style={styles.sub}>
@@ -91,11 +107,10 @@ export function LeaderboardScreen() {
           </Text>
         </View>
 
-        {/* Metric toggle card */}
-        <View style={styles.card}>
+        <GradientCard>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}>
-              <Text style={styles.icon}>📊</Text>
+              <MaterialCommunityIcons name="chart-bar" size={16} color="#DC2626" />
             </View>
             <Text style={styles.cardTitle}>Metric</Text>
           </View>
@@ -104,13 +119,12 @@ export function LeaderboardScreen() {
             <ToggleButton label="Area" value="area" selected={metric} onSelect={setMetric} />
             <ToggleButton label="Distance" value="distance" selected={metric} onSelect={setMetric} />
           </View>
-        </View>
+        </GradientCard>
 
-        {/* Period toggle card */}
-        <View style={styles.card}>
+        <GradientCard>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}>
-              <Text style={styles.icon}>⏱️</Text>
+              <MaterialCommunityIcons name="timer-outline" size={16} color="#DC2626" />
             </View>
             <Text style={styles.cardTitle}>Period</Text>
           </View>
@@ -129,13 +143,12 @@ export function LeaderboardScreen() {
           {!loading && !error && rows.length === 0 ? (
             <Text style={styles.hint}>No valid sessions in this period yet.</Text>
           ) : null}
-        </View>
+        </GradientCard>
 
-        {/* List */}
-        <View style={styles.card}>
+        <GradientCard>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}>
-              <Text style={styles.icon}>🏆</Text>
+              <MaterialCommunityIcons name="trophy" size={18} color="#DC2626" />
             </View>
             <Text style={styles.cardTitle}>Results</Text>
           </View>
@@ -143,10 +156,12 @@ export function LeaderboardScreen() {
           <View style={{ gap: 10 }}>
             {rows.map((row, index) => {
               const topThree = index < 3;
+              const badge = getRankBadge(row.rank);
+
               return (
                 <View key={row.userId} style={[styles.row, topThree && styles.rowTop]}>
                   <View style={styles.rankWrap}>
-                    <Text style={[styles.rank, topThree && styles.rankTop]}>#{row.rank}</Text>
+                    <MaterialCommunityIcons name={badge.icon as any} size={16} color={badge.color} />
                   </View>
 
                   <View style={[styles.avatar, topThree && styles.avatarTop]}>
@@ -163,15 +178,13 @@ export function LeaderboardScreen() {
                   </View>
 
                   <View style={styles.valueWrap}>
-                    <Text style={[styles.value, topThree && styles.valueTop]}>
-                      {formatMetricValue(metric, row.value)}
-                    </Text>
+                    <Text style={[styles.value, topThree && styles.valueTop]}>{formatMetricValue(metric, row.value)}</Text>
                   </View>
                 </View>
               );
             })}
           </View>
-        </View>
+        </GradientCard>
       </ScrollView>
     </SafeAreaView>
   );
@@ -191,7 +204,6 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: "rgba(127, 29, 29, 0.30)",
-    backgroundColor: "rgba(69, 10, 10, 0.22)",
   },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   iconBox: {
@@ -202,7 +214,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  icon: { fontSize: 16 },
   cardTitle: { color: "#fff", fontSize: 18, fontWeight: "800" },
 
   toggleRow: { flexDirection: "row", gap: 10 },
@@ -252,9 +263,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(220, 38, 38, 0.12)",
   },
 
-  rankWrap: { width: 40, alignItems: "center" },
-  rank: { color: "#E5E7EB", fontWeight: "900" },
-  rankTop: { color: "#FCA5A5" },
+  rankWrap: { width: 40, alignItems: "center", justifyContent: "center" },
 
   avatar: {
     width: 36,

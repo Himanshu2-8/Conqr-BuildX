@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-// @ts-ignore – react-native-maps is not installed in this workspace
+// @ts-ignore react-native-maps types are resolved at runtime in this Expo app
 import MapView, { Polygon, Polyline, type Region } from "react-native-maps";
 import { useRunTracker } from "./hooks/useRunTracker";
 import { useAuth } from "./context/AuthContext";
@@ -184,8 +184,8 @@ export function RunScreen() {
                 <Polygon
                   key={`${shape.userId ?? "unknown"}-${index}`}
                   coordinates={shape.coordinates}
-                  fillColor={isOwn ? "rgba(56,189,248,0.25)" : "rgba(251,191,36,0.18)"}
-                  strokeColor={isOwn ? "#38bdf8" : "#f59e0b"}
+                  fillColor={isOwn ? "rgba(220,38,38,0.26)" : "rgba(156,163,175,0.18)"}
+                  strokeColor={isOwn ? "#DC2626" : "#9CA3AF"}
                   strokeWidth={isOwn ? 2 : 1}
                 />
               );
@@ -193,7 +193,7 @@ export function RunScreen() {
             {routeCoordinates.length >= 2 ? (
               <Polyline
                 coordinates={routeCoordinates}
-                strokeColor={isRunning ? "#22c55e" : "#38bdf8"}
+                strokeColor={isRunning ? "#EF4444" : "#FCA5A5"}
                 strokeWidth={5}
                 lineCap="round"
                 lineJoin="round"
@@ -230,13 +230,17 @@ export function RunScreen() {
         {territory ? (
           <View style={styles.territoryCard}>
             <Text style={styles.territoryTitle}>Territory</Text>
-            <Text style={styles.territoryText}>{Math.round(territory.areaM2).toLocaleString()} m² claimed</Text>
+            <Text style={styles.territoryText}>{Math.round(territory.areaM2).toLocaleString()} m2 claimed</Text>
           </View>
         ) : null}
 
         <View style={styles.actions}>
           {isRunning ? (
-            <Pressable style={[styles.primaryButton, styles.stopButton, saving && styles.disabledButton]} onPress={onStop} disabled={saving}>
+            <Pressable
+              style={[styles.primaryButton, styles.stopButton, saving && styles.disabledButton]}
+              onPress={onStop}
+              disabled={saving}
+            >
               <Text style={styles.primaryButtonText}>Stop Run</Text>
             </Pressable>
           ) : (
@@ -265,14 +269,14 @@ export function RunScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#0b1220",
+    backgroundColor: "#000000",
   },
   container: {
     flex: 1,
   },
   contentContainer: {
-    padding: 20,
-    gap: 16,
+    padding: 16,
+    gap: 14,
     paddingBottom: 24,
   },
   header: {
@@ -281,25 +285,25 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "800",
-    color: "#f8fafc",
+    color: "#ffffff",
   },
   subtitle: {
     fontSize: 14,
-    color: "#94a3b8",
+    color: "#9CA3AF",
   },
   mapCard: {
-    borderRadius: 18,
+    borderRadius: 14,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#1f2937",
-    backgroundColor: "#0f172a",
+    borderColor: "rgba(127, 29, 29, 0.30)",
+    backgroundColor: "rgba(69, 10, 10, 0.22)",
   },
   map: {
     height: 240,
     width: "100%",
   },
   mapCaption: {
-    color: "#94a3b8",
+    color: "#9CA3AF",
     fontSize: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -308,45 +312,45 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   statCard: {
-    backgroundColor: "#111827",
-    borderRadius: 18,
+    backgroundColor: "rgba(69, 10, 10, 0.22)",
+    borderRadius: 14,
     padding: 14,
     gap: 6,
     borderWidth: 1,
-    borderColor: "#1f2937",
+    borderColor: "rgba(127, 29, 29, 0.30)",
   },
   statLabel: {
     fontSize: 12,
-    color: "#94a3b8",
+    color: "#9CA3AF",
     textTransform: "uppercase",
     letterSpacing: 1,
   },
   statValue: {
     fontSize: 24,
     fontWeight: "700",
-    color: "#f8fafc",
+    color: "#ffffff",
   },
   metaRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    backgroundColor: "#0f172a",
-    borderRadius: 14,
+    backgroundColor: "rgba(69, 10, 10, 0.22)",
+    borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: "#1e293b",
+    borderColor: "rgba(127, 29, 29, 0.30)",
   },
   metaText: {
-    color: "#94a3b8",
+    color: "#9CA3AF",
     fontSize: 14,
   },
   metaValue: {
-    color: "#f8fafc",
+    color: "#ffffff",
     fontSize: 16,
     fontWeight: "700",
   },
   errorText: {
-    color: "#fca5a5",
+    color: "#FB7185",
     fontSize: 13,
     textAlign: "center",
   },
@@ -355,28 +359,31 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   primaryButton: {
-    backgroundColor: "#22c55e",
-    borderRadius: 16,
+    backgroundColor: "#DC2626",
+    borderRadius: 14,
     paddingVertical: 16,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(220,38,38,0.60)",
   },
   stopButton: {
-    backgroundColor: "#ef4444",
+    backgroundColor: "#B91C1C",
   },
   primaryButtonText: {
-    color: "#0f172a",
+    color: "#ffffff",
     fontSize: 16,
     fontWeight: "700",
   },
   secondaryButton: {
-    borderRadius: 16,
+    borderRadius: 14,
     paddingVertical: 14,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#334155",
+    borderColor: "rgba(220,38,38,0.45)",
+    backgroundColor: "rgba(69, 10, 10, 0.22)",
   },
   secondaryButtonText: {
-    color: "#e2e8f0",
+    color: "#FCA5A5",
     fontSize: 15,
     fontWeight: "600",
   },
@@ -385,34 +392,34 @@ const styles = StyleSheet.create({
   },
   saveCard: {
     borderWidth: 1,
-    borderColor: "#1e293b",
+    borderColor: "rgba(127, 29, 29, 0.30)",
     borderRadius: 12,
     padding: 12,
     gap: 4,
-    backgroundColor: "#0f172a",
+    backgroundColor: "rgba(69, 10, 10, 0.22)",
   },
   saveTitle: {
-    color: "#f8fafc",
+    color: "#ffffff",
     fontWeight: "700",
   },
   saveText: {
-    color: "#cbd5e1",
+    color: "#E5E7EB",
     fontSize: 13,
   },
   territoryCard: {
     borderWidth: 1,
-    borderColor: "#1f2937",
+    borderColor: "rgba(127, 29, 29, 0.30)",
     borderRadius: 12,
     padding: 12,
     gap: 4,
-    backgroundColor: "#111827",
+    backgroundColor: "rgba(69, 10, 10, 0.22)",
   },
   territoryTitle: {
-    color: "#f8fafc",
+    color: "#ffffff",
     fontWeight: "700",
   },
   territoryText: {
-    color: "#bae6fd",
+    color: "#FCA5A5",
     fontSize: 13,
   },
 });
