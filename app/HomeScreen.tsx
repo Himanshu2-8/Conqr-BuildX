@@ -32,11 +32,37 @@ function getRegionFromPolygon(coords: TerritoryState["coordinates"]): Region {
   };
 }
 
+function getRegionFromTerritories(shapes: TerritoryState[]): Region | null {
+  const coords = shapes.flatMap((shape) => shape.coordinates);
+  if (coords.length === 0) {
+    return null;
+  }
+  return getRegionFromPolygon(coords);
+}
+
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "R";
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+}
+
+function getColorForUser(userId: string | undefined, isOwn: boolean) {
+  if (isOwn) {
+    return { fill: "rgba(220,38,38,0.30)", stroke: "#DC2626" };
+  }
+  if (!userId) {
+    return { fill: "rgba(14,165,233,0.30)", stroke: "#0284C7" };
+  }
+  const palette = [
+    { fill: "rgba(234,179,8,0.30)", stroke: "#CA8A04" },
+    { fill: "rgba(16,185,129,0.30)", stroke: "#059669" },
+    { fill: "rgba(59,130,246,0.30)", stroke: "#2563EB" },
+    { fill: "rgba(168,85,247,0.30)", stroke: "#9333EA" },
+    { fill: "rgba(249,115,22,0.30)", stroke: "#EA580C" },
+  ];
+  const hash = userId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return palette[hash % palette.length];
 }
 
 export function HomeScreen() {
@@ -60,6 +86,7 @@ export function HomeScreen() {
       setSummary(null);
       return;
     }
+
     let active = true;
     setLoadingSummary(true);
     setSummaryError(null);
@@ -85,18 +112,30 @@ export function HomeScreen() {
   useEffect(() => {
     if (!user) {
       setTerritory(null);
+      setAllTerritories([]);
       return;
     }
+
     let active = true;
     setTerritoryError(null);
 
-    fetchTerritory(user.uid)
-      .then((data) => {
-        if (active) setTerritory(data);
-      })
-      .then(async () => {
-        const all = await fetchAllTerritories();
-        if (active) setAllTerritories(all);
+    Promise.allSettled([fetchTerritory(user.uid), fetchAllTerritories()])
+      .then(([ownResult, allResult]) => {
+        if (!active) return;
+
+        if (ownResult.status === "fulfilled") {
+          setTerritory(ownResult.value);
+        } else {
+          const message = ownResult.reason instanceof Error ? ownResult.reason.message : "Failed to load your territory";
+          setTerritoryError(message);
+        }
+
+        if (allResult.status === "fulfilled") {
+          setAllTerritories(allResult.value);
+        } else {
+          const message = allResult.reason instanceof Error ? allResult.reason.message : "Failed to load all territories";
+          setTerritoryError((prev) => prev ?? message);
+        }
       })
       .catch((err: unknown) => {
         if (!active) return;
@@ -133,26 +172,22 @@ export function HomeScreen() {
   }, []);
 
   const name = user?.displayName || "Runner";
-  const territoryRegion = territory?.coordinates ? getRegionFromPolygon(territory.coordinates) : FALLBACK_REGION;
-
+  const allRegion = getRegionFromTerritories(allTerritories);
+  const territoryRegion = allRegion ?? (territory?.coordinates ? getRegionFromPolygon(territory.coordinates) : FALLBACK_REGION);
   const totalKm = summary ? summary.totalDistanceM / 1000 : 0;
-  const weekKm = summary ? summary.weekDistanceM / 1000 : 0; // if you don't have weekDistanceM, remove this line
-  const monthKm = summary ? summary.monthDistanceM / 1000 : 0; // if you don't have monthDistanceM, remove this line
 
   const lastRunText = summary?.lastRun
-    ? `${(summary.lastRun.distanceM / 1000).toFixed(2)} km • ${Math.round(summary.lastRun.durationSec)}s`
+    ? `${(summary.lastRun.distanceM / 1000).toFixed(2)} km - ${Math.round(summary.lastRun.durationSec)}s`
     : "No runs yet";
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
-        {/* HEADER (Figma style) */}
         <View style={styles.headerWrap}>
           <View style={styles.headerRow}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>{getInitials(name)}</Text>
             </View>
-
             <View style={styles.headerMain}>
               <Text style={styles.h1}>
                 Hey, <Text style={styles.h1Accent}>{name}</Text>
@@ -161,69 +196,58 @@ export function HomeScreen() {
                 {user?.email || ""}
               </Text>
             </View>
-
             <Pressable onPress={signOut} style={({ pressed }) => [styles.signOutBtn, pressed && styles.pressed]}>
-              <Text style={styles.signOutIcon}>⎋</Text>
+              <Text style={styles.signOutIcon}>{">"}</Text>
             </Pressable>
           </View>
         </View>
 
-        {/* TODAY FOCUS card */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}>
-              <Text style={styles.icon}>🎯</Text>
+              <Text style={styles.icon}>*</Text>
             </View>
             <Text style={styles.cardTitle}>Today's Focus</Text>
           </View>
-
           <Text style={styles.cardBody}>Stay consistent. Every run adds territory.</Text>
-
           {loadingSummary ? <Text style={styles.hint}>Loading your progress...</Text> : null}
           {summaryError ? <Text style={styles.error}>{summaryError}</Text> : null}
         </View>
 
-        {/* TERRITORY card */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}>
-              <Text style={styles.icon}>🗺️</Text>
+              <Text style={styles.icon}>#</Text>
             </View>
             <Text style={styles.cardTitle}>Your Territory</Text>
           </View>
 
-          {/* Total distance big box */}
           <View style={styles.bigBox}>
             <View style={styles.bigTop}>
               <Text style={styles.dimLabel}>Total Distance</Text>
-              <Text style={styles.dimIcon}>📈</Text>
+              <Text style={styles.dimIcon}>+</Text>
             </View>
             <Text style={styles.bigValue}>
               {totalKm.toFixed(1)} <Text style={styles.bigUnit}>km</Text>
             </Text>
           </View>
 
-          {/* Mini boxes (This Week / This Month) - if you don't have those fields, keep Total Runs + Area instead */}
           <View style={styles.grid2}>
             <View style={styles.smallBox}>
               <Text style={styles.dimLabel}>Total Runs</Text>
               <Text style={styles.smallValue}>{summary ? summary.totalRuns : 0}</Text>
             </View>
-
             <View style={styles.smallBox}>
               <Text style={styles.dimLabel}>Territory Area</Text>
               <Text style={styles.smallValue}>
-                {territory ? Math.round(territory.areaM2).toLocaleString() : 0}{" "}
-                <Text style={styles.smallUnit}>m²</Text>
+                {territory ? Math.round(territory.areaM2).toLocaleString() : 0} <Text style={styles.smallUnit}>m2</Text>
               </Text>
             </View>
           </View>
 
           <View style={styles.metaRow}>
             <Text style={styles.metaLabel}>Total territory</Text>
-            <Text style={styles.metaValue}>
-              {summary ? Math.round(summary.totalAreaM2).toLocaleString() : 0} m²
-            </Text>
+            <Text style={styles.metaValue}>{summary ? Math.round(summary.totalAreaM2).toLocaleString() : 0} m2</Text>
           </View>
 
           <View style={styles.metaRow}>
@@ -233,54 +257,50 @@ export function HomeScreen() {
             </Text>
           </View>
 
-          {/* MAP section inside same card */}
           <View style={styles.mapWrap}>
             <View style={styles.mapClip}>
               <MapView style={styles.map} region={territoryRegion}>
                 {allTerritories.map((shape, index) => {
                   const isOwn = !!user && shape.userId === user.uid;
+                  const colors = getColorForUser(shape.userId, isOwn);
                   return (
                     <Polygon
                       key={`${shape.userId ?? "unknown"}-${index}`}
                       coordinates={shape.coordinates}
-                      fillColor={isOwn ? "rgba(220,38,38,0.22)" : "rgba(255,255,255,0.08)"}
-                      strokeColor={isOwn ? "#DC2626" : "rgba(255,255,255,0.18)"}
+                      fillColor={colors.fill}
+                      strokeColor={colors.stroke}
                       strokeWidth={isOwn ? 2 : 1}
                     />
                   );
                 })}
               </MapView>
             </View>
-
+            <Text style={styles.hint}>Territories shown: {allTerritories.length}</Text>
             <Text style={styles.hint}>
               {territory?.coordinates
-                ? `${Math.round(territory.areaM2).toLocaleString()} m² claimed so far`
+                ? `${Math.round(territory.areaM2).toLocaleString()} m2 claimed so far`
                 : "No territory yet. Complete your first valid run."}
             </Text>
-
             {territoryError ? <Text style={styles.error}>{territoryError}</Text> : null}
           </View>
         </View>
 
-        {/* START RUN button (Figma style) */}
         <Pressable style={({ pressed }) => [styles.startBtn, pressed && styles.startBtnPressed]} onPress={() => navigation.navigate("Run")}>
           <View style={styles.playCircle}>
-            <Text style={styles.playIcon}>▶</Text>
+            <Text style={styles.playIcon}>{">"}</Text>
           </View>
           <Text style={styles.startText}>Start Run</Text>
         </Pressable>
 
-        {/* HOME Leaderboard preview card (tap -> LeaderboardScreen) */}
-        <Pressable onPress={() => navigation.navigate("Leaderboard")} style={styles.card}>
+        <View style={styles.card}>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}>
-              <Text style={styles.icon}>🏆</Text>
+              <Text style={styles.icon}>^</Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>Leaderboard</Text>
               <Text style={styles.hint}>Top runners this week</Text>
             </View>
-            <Text style={styles.chev}>›</Text>
           </View>
 
           {leaderboardLoading ? <Text style={styles.hint}>Loading rankings...</Text> : null}
@@ -317,7 +337,7 @@ export function HomeScreen() {
               );
             })}
           </View>
-        </Pressable>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -376,7 +396,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  icon: { fontSize: 16 },
+  icon: { fontSize: 16, color: "#fff" },
   cardTitle: { color: "#fff", fontSize: 18, fontWeight: "700" },
   cardBody: { color: "#D1D5DB", fontSize: 14, lineHeight: 20, marginTop: 10 },
 
@@ -386,7 +406,7 @@ const styles = StyleSheet.create({
   bigBox: { backgroundColor: "rgba(0,0,0,0.40)", borderRadius: 12, padding: 14, marginTop: 12 },
   bigTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   dimLabel: { color: "#9CA3AF", fontSize: 13 },
-  dimIcon: { fontSize: 14 },
+  dimIcon: { fontSize: 14, color: "#9CA3AF" },
   bigValue: { color: "#DC2626", fontWeight: "900", fontSize: 34, marginTop: 6 },
   bigUnit: { color: "#9CA3AF", fontWeight: "700", fontSize: 14 },
 
@@ -427,8 +447,6 @@ const styles = StyleSheet.create({
   },
   playIcon: { color: "#fff", fontSize: 18, fontWeight: "900", marginLeft: 2 },
   startText: { color: "#fff", fontSize: 20, fontWeight: "900" },
-
-  chev: { color: "#9CA3AF", fontSize: 22, fontWeight: "700" },
 
   lbRow: {
     flexDirection: "row",
