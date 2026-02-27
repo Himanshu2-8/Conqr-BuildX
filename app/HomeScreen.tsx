@@ -3,7 +3,7 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "rea
 import { useAuth } from "./context/AuthContext";
 import { useNavigation } from "@react-navigation/native";
 import { fetchDashboardSummary, type DashboardSummary } from "./services/dashboard";
-import { fetchTerritory, type TerritoryState } from "./services/territory";
+import { fetchAllTerritories, fetchTerritory, type TerritoryState } from "./services/territory";
 import { fetchLeaderboard, type LeaderboardRow } from "./services/leaderboard";
 
 function getInitials(name: string) {
@@ -24,6 +24,7 @@ export function HomeScreen() {
   const [loadingSummary, setLoadingSummary] = React.useState(false);
   const [summaryError, setSummaryError] = React.useState<string | null>(null);
   const [territory, setTerritory] = React.useState<TerritoryState | null>(null);
+  const [allTerritories, setAllTerritories] = React.useState<TerritoryState[]>([]);
   const [territoryError, setTerritoryError] = React.useState<string | null>(null);
   const [leaderboard, setLeaderboard] = React.useState<LeaderboardRow[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = React.useState(false);
@@ -71,6 +72,12 @@ export function HomeScreen() {
       .then((data) => {
         if (active) {
           setTerritory(data);
+        }
+      })
+      .then(async () => {
+        const all = await fetchAllTerritories();
+        if (active) {
+          setAllTerritories(all);
         }
       })
       .catch((err: unknown) => {
@@ -165,10 +172,35 @@ export function HomeScreen() {
               </Text>
             </View>
           </View>
-          <Text style={styles.lastRunText}>
-            {summary?.lastRun
-              ? `Last run ${(summary.lastRun.distanceM / 1000).toFixed(2)} km in ${Math.round(summary.lastRun.durationSec)}s`
-              : "No runs yet"}
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Total territory</Text>
+            <Text style={styles.summaryValue}>{summary ? Math.round(summary.totalAreaM2).toLocaleString() : 0} m²</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Last run</Text>
+            <Text style={styles.summaryValue}>
+              {summary?.lastRun
+                ? `${(summary.lastRun.distanceM / 1000).toFixed(2)} km • ${Math.round(summary.lastRun.durationSec)}s`
+                : "No runs yet"}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.mapCard}>
+          <Text style={styles.mapTitle}>Your Territory</Text>
+          <MapView style={styles.map} initialRegion={territoryRegion} region={territoryRegion}>
+            {territory?.coordinates ? (
+              <Polygon
+                coordinates={territory.coordinates}
+                fillColor="rgba(34,197,94,0.25)"
+                strokeColor="#16a34a"
+                strokeWidth={2}
+              />
+            ) : null}
+          </MapView>
+          <Text style={styles.mapCaption}>
+            {territory?.coordinates
+              ? `${Math.round(territory.areaM2).toLocaleString()} m² claimed so far`
+              : "No territory yet. Complete your first valid run."}
           </Text>
           {territoryError ? <Text style={styles.errorText}>{territoryError}</Text> : null}
         </View>

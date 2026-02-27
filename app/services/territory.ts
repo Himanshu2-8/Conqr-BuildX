@@ -1,4 +1,4 @@
-import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import type { TrackPoint } from "../hooks/useRunTracker";
 
@@ -8,6 +8,7 @@ type LatLngPoint = {
 };
 
 export type TerritoryState = {
+  userId?: string;
   coordinates: LatLngPoint[];
   areaM2: number;
 };
@@ -113,9 +114,30 @@ export async function fetchTerritory(userId: string): Promise<TerritoryState | n
     return null;
   }
   return {
+    userId,
     coordinates: polygon,
     areaM2: typeof data.areaM2 === "number" ? data.areaM2 : 0,
   };
+}
+
+export async function fetchAllTerritories(): Promise<TerritoryState[]> {
+  const snapshot = await getDocs(collection(db, "territories"));
+  const territories: TerritoryState[] = [];
+
+  snapshot.forEach((docSnap) => {
+    const data = docSnap.data();
+    const polygon = normalizeStoredCoordinates(data?.coordinates);
+    if (!polygon || polygon.length === 0) {
+      return;
+    }
+    territories.push({
+      userId: typeof data?.userId === "string" ? data.userId : docSnap.id,
+      coordinates: polygon,
+      areaM2: typeof data?.areaM2 === "number" ? data.areaM2 : 0,
+    });
+  });
+
+  return territories;
 }
 
 export async function updateTerritoryForRun(userId: string, points: TrackPoint[]): Promise<TerritoryState | null> {
