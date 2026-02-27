@@ -74,7 +74,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (cleanUsername) {
                 await updateProfile(cred.user, { displayName: cleanUsername });
             }
-            await ensureUserProfile(cred.user, cleanUsername);
+            try {
+                await ensureUserProfile(cred.user, cleanUsername);
+            } catch (profileErr: unknown) {
+                const profileMessage =
+                    profileErr instanceof Error ? profileErr.message : "Failed to create profile document";
+                console.error("signup profile bootstrap failed:", profileMessage);
+            }
 
             return {
                 success: true,
@@ -95,7 +101,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
 
             const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
-            await ensureUserProfile(cred.user);
+            try {
+                await ensureUserProfile(cred.user);
+            } catch (profileErr: unknown) {
+                const profileMessage =
+                    profileErr instanceof Error ? profileErr.message : "Failed to ensure profile document";
+                console.error("signin profile bootstrap failed:", profileMessage);
+            }
 
             return { success: true };
         } catch (err: unknown) {
