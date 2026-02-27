@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { fetchLeaderboard, type LeaderboardMetric, type LeaderboardPeriod, type LeaderboardRow } from "./services/leaderboard";
 
 function formatMetricValue(metric: LeaderboardMetric, value: number): string {
@@ -27,6 +28,7 @@ function ToggleButton<T extends string>({ label, value, selected, onSelect }: To
 }
 
 export function LeaderboardScreen() {
+  const insets = useSafeAreaInsets();
   const [metric, setMetric] = useState<LeaderboardMetric>("area");
   const [period, setPeriod] = useState<LeaderboardPeriod>("daily");
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
@@ -62,7 +64,10 @@ export function LeaderboardScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[styles.container, { paddingBottom: 30 + insets.bottom }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.header}>
           <Text style={styles.title}>Leaderboard</Text>
           <Text style={styles.subtitle}>Rank runners by {metricLabel.toLowerCase()} for this {period} window.</Text>
@@ -122,7 +127,7 @@ const styles = StyleSheet.create({
   container: {
     padding: 20,
     gap: 14,
-    paddingBottom: 30,
+    flexGrow: 1,
   },
   header: {
     gap: 4,

@@ -4,7 +4,7 @@ import { useAuth } from "./context/AuthContext";
 import { useNavigation } from "@react-navigation/native";
 import { fetchDashboardSummary, type DashboardSummary } from "./services/dashboard";
 import MapView, { Polygon, type Region } from "react-native-maps";
-import { fetchTerritory, type TerritoryState } from "./services/territory";
+import { fetchAllTerritories, fetchTerritory, type TerritoryState } from "./services/territory";
 
 const FALLBACK_REGION: Region = {
   latitude: 20.5937,
@@ -34,6 +34,7 @@ export function HomeScreen() {
   const [loadingSummary, setLoadingSummary] = React.useState(false);
   const [summaryError, setSummaryError] = React.useState<string | null>(null);
   const [territory, setTerritory] = React.useState<TerritoryState | null>(null);
+  const [allTerritories, setAllTerritories] = React.useState<TerritoryState[]>([]);
   const [territoryError, setTerritoryError] = React.useState<string | null>(null);
 
   useEffect(() => {
@@ -78,6 +79,12 @@ export function HomeScreen() {
       .then((data) => {
         if (active) {
           setTerritory(data);
+        }
+      })
+      .then(async () => {
+        const all = await fetchAllTerritories();
+        if (active) {
+          setAllTerritories(all);
         }
       })
       .catch((err: unknown) => {
@@ -133,14 +140,18 @@ export function HomeScreen() {
         <View style={styles.mapCard}>
           <Text style={styles.mapTitle}>Your Territory</Text>
           <MapView style={styles.map} initialRegion={territoryRegion} region={territoryRegion}>
-            {territory?.coordinates ? (
-              <Polygon
-                coordinates={territory.coordinates}
-                fillColor="rgba(34,197,94,0.25)"
-                strokeColor="#16a34a"
-                strokeWidth={2}
-              />
-            ) : null}
+            {allTerritories.map((shape, index) => {
+              const isOwn = !!user && shape.userId === user.uid;
+              return (
+                <Polygon
+                  key={`${shape.userId ?? "unknown"}-${index}`}
+                  coordinates={shape.coordinates}
+                  fillColor={isOwn ? "rgba(34,197,94,0.25)" : "rgba(251,191,36,0.18)"}
+                  strokeColor={isOwn ? "#16a34a" : "#f59e0b"}
+                  strokeWidth={isOwn ? 2 : 1}
+                />
+              );
+            })}
           </MapView>
           <Text style={styles.mapCaption}>
             {territory?.coordinates

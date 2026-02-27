@@ -5,7 +5,7 @@ import MapView, { Polygon, Polyline, type Region } from "react-native-maps";
 import { useRunTracker } from "./hooks/useRunTracker";
 import { useAuth } from "./context/AuthContext";
 import { saveRunSession, type SaveRunResult, updateSessionClaimedArea } from "./services/runSessions";
-import { fetchTerritory, updateTerritoryForRun, type TerritoryState } from "./services/territory";
+import { fetchAllTerritories, fetchTerritory, updateTerritoryForRun, type TerritoryState } from "./services/territory";
 
 function formatDuration(totalSeconds: number) {
   const hrs = Math.floor(totalSeconds / 3600);
@@ -38,6 +38,7 @@ export function RunScreen() {
   const [runStartedAtMs, setRunStartedAtMs] = React.useState<number | null>(null);
   const [lastSave, setLastSave] = React.useState<SaveRunResult | null>(null);
   const [territory, setTerritory] = React.useState<TerritoryState | null>(null);
+  const [allTerritories, setAllTerritories] = React.useState<TerritoryState[]>([]);
   const [territoryLoading, setTerritoryLoading] = React.useState(false);
   const mapRef = useRef<MapView | null>(null);
 
@@ -82,6 +83,12 @@ export function RunScreen() {
       .then((data) => {
         if (isActive) {
           setTerritory(data);
+        }
+      })
+      .then(async () => {
+        const all = await fetchAllTerritories();
+        if (isActive) {
+          setAllTerritories(all);
         }
       })
       .finally(() => {
@@ -131,6 +138,8 @@ export function RunScreen() {
           setTerritory(updatedTerritory);
           const claimedAreaDeltaM2 = Math.max(updatedTerritory.areaM2 - previousAreaM2, 0);
           await updateSessionClaimedArea(result.sessionId, claimedAreaDeltaM2);
+          const refreshedTerritories = await fetchAllTerritories();
+          setAllTerritories(refreshedTerritories);
         }
       }
       Alert.alert(
@@ -168,14 +177,18 @@ export function RunScreen() {
             followsUserLocation
             showsMyLocationButton
           >
-            {territory?.coordinates ? (
-              <Polygon
-                coordinates={territory.coordinates}
-                fillColor="rgba(56,189,248,0.2)"
-                strokeColor="#38bdf8"
-                strokeWidth={2}
-              />
-            ) : null}
+            {allTerritories.map((shape, index) => {
+              const isOwn = !!user && shape.userId === user.uid;
+              return (
+                <Polygon
+                  key={`${shape.userId ?? "unknown"}-${index}`}
+                  coordinates={shape.coordinates}
+                  fillColor={isOwn ? "rgba(56,189,248,0.25)" : "rgba(251,191,36,0.18)"}
+                  strokeColor={isOwn ? "#38bdf8" : "#f59e0b"}
+                  strokeWidth={isOwn ? 2 : 1}
+                />
+              );
+            })}
             {routeCoordinates.length >= 2 ? (
               <Polyline
                 coordinates={routeCoordinates}
