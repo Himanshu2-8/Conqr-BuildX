@@ -16,7 +16,7 @@ type RunTrackerState = {
   paceMinPerKm: number | null;
   points: TrackPoint[];
   error: string | null;
-  startRun: () => Promise<void>;
+  startRun: () => Promise<boolean>;
   stopRun: () => void;
   resetRun: () => void;
 };
@@ -92,11 +92,12 @@ export function useRunTracker(): RunTrackerState {
 
   const startRun = async () => {
     setError(null);
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== "granted") {
-      setError("Location permission denied.");
-      return;
-    }
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        setError("Location permission denied.");
+        return false;
+      }
 
     setElapsedSeconds(0);
     setDistanceMeters(0);
@@ -120,40 +121,40 @@ export function useRunTracker(): RunTrackerState {
       setError("Unable to get initial location. Tracking will continue when GPS updates arrive.");
     }
 
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-    timerRef.current = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
-    }, 1000);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds((prev) => prev + 1);
+      }, 1000);
 
-    if (locationSubRef.current) {
-      locationSubRef.current.remove();
-    }
+      if (locationSubRef.current) {
+        locationSubRef.current.remove();
+      }
 
-    locationSubRef.current = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.BestForNavigation,
-        timeInterval: 3000,
-        distanceInterval: 2,
-      },
-      (position) => {
-        const nextPoint: TrackPoint = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy ?? null,
-          speed: position.coords.speed ?? null,
-          timestamp: position.timestamp,
-        };
+      locationSubRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.BestForNavigation,
+          timeInterval: 2000,
+          distanceInterval: 1,
+        },
+        (position) => {
+          const nextPoint: TrackPoint = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy ?? null,
+            speed: position.coords.speed ?? null,
+            timestamp: position.timestamp,
+          };
 
-        setPoints((prev) => {
+          setPoints((prev) => {
           if (isPoorAccuracy(nextPoint)) {
             return prev;
           }
 
-          if (prev.length === 0) {
-            return [nextPoint];
-          }
+            if (prev.length === 0) {
+              return [nextPoint];
+            }
 
           const lastPoint = prev[prev.length - 1];
           const segmentDistance = haversineMeters(lastPoint, nextPoint);
@@ -166,7 +167,13 @@ export function useRunTracker(): RunTrackerState {
       }
     );
 
-    setIsRunning(true);
+      setIsRunning(true);
+      return true;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to start GPS tracking";
+      setError(message);
+      return false;
+    }
   };
 
   const stopRun = () => {

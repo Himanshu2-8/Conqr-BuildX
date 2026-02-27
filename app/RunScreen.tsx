@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef } from "react";
 import { Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 import MapView, { Polyline, type Region } from "react-native-maps";
 import { useRunTracker } from "./hooks/useRunTracker";
+import { useAuth } from "./context/AuthContext";
+import { saveRunSession, type SaveRunResult } from "./services/runSessions";
 
 function formatDuration(totalSeconds: number) {
   const hrs = Math.floor(totalSeconds / 3600);
@@ -27,8 +29,12 @@ const DEFAULT_REGION: Region = {
 };
 
 export function RunScreen() {
+  const { user } = useAuth();
   const { isRunning, elapsedSeconds, distanceMeters, paceMinPerKm, points, error, startRun, stopRun, resetRun } =
     useRunTracker();
+  const [saving, setSaving] = React.useState(false);
+  const [runStartedAtMs, setRunStartedAtMs] = React.useState<number | null>(null);
+  const [lastSave, setLastSave] = React.useState<SaveRunResult | null>(null);
   const mapRef = useRef<MapView | null>(null);
 
   const routeCoordinates = useMemo(
@@ -62,12 +68,47 @@ export function RunScreen() {
   }, [routeCoordinates]);
 
   const onStart = async () => {
-    await startRun();
+    const started = await startRun();
+    if (started) {
+      setLastSave(null);
+      setRunStartedAtMs(Date.now());
+    }
   };
 
-  const onStop = () => {
+  const onStop = async () => {
     stopRun();
-    Alert.alert("Run stopped", `Captured ${points.length} points`);
+    const endedAtMs = Date.now();
+    const startedAtMs = runStartedAtMs ?? endedAtMs - elapsedSeconds * 1000;
+
+    if (!user) {
+      Alert.alert("Session not saved", "No authenticated user found.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const result = await saveRunSession({
+        userId: user.uid,
+        startedAtMs,
+        endedAtMs,
+        elapsedSeconds,
+        distanceMeters,
+        paceMinPerKm,
+        points,
+      });
+      setLastSave(result);
+      Alert.alert(
+        "Run saved",
+        result.isValid
+          ? `Session ${result.sessionId} saved.`
+          : `Saved as invalid: ${result.invalidReason ?? "Unknown reason"}`
+      );
+    } catch (saveErr: unknown) {
+      const message = saveErr instanceof Error ? saveErr.message : "Failed to save run";
+      Alert.alert("Save failed", message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -130,17 +171,26 @@ export function RunScreen() {
 
         <View style={styles.actions}>
           {isRunning ? (
-            <Pressable style={[styles.primaryButton, styles.stopButton]} onPress={onStop}>
+            <Pressable style={[styles.primaryButton, styles.stopButton, saving && styles.disabledButton]} onPress={onStop} disabled={saving}>
               <Text style={styles.primaryButtonText}>Stop Run</Text>
             </Pressable>
           ) : (
-            <Pressable style={styles.primaryButton} onPress={onStart}>
+            <Pressable style={[styles.primaryButton, saving && styles.disabledButton]} onPress={onStart} disabled={saving}>
               <Text style={styles.primaryButtonText}>Start Run</Text>
             </Pressable>
           )}
-          <Pressable style={styles.secondaryButton} onPress={resetRun}>
+          <Pressable style={[styles.secondaryButton, saving && styles.disabledButton]} onPress={resetRun} disabled={saving}>
             <Text style={styles.secondaryButtonText}>Reset</Text>
           </Pressable>
+          {saving ? <Text style={styles.metaText}>Saving session...</Text> : null}
+          {lastSave ? (
+            <View style={styles.saveCard}>
+              <Text style={styles.saveTitle}>Last Save</Text>
+              <Text style={styles.saveText}>Session: {lastSave.sessionId}</Text>
+              <Text style={styles.saveText}>Valid: {lastSave.isValid ? "Yes" : "No"}</Text>
+              {lastSave.invalidReason ? <Text style={styles.saveText}>Reason: {lastSave.invalidReason}</Text> : null}
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -264,5 +314,24 @@ const styles = StyleSheet.create({
     color: "#e2e8f0",
     fontSize: 15,
     fontWeight: "600",
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  saveCard: {
+    borderWidth: 1,
+    borderColor: "#1e293b",
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+    backgroundColor: "#0f172a",
+  },
+  saveTitle: {
+    color: "#f8fafc",
+    fontWeight: "700",
+  },
+  saveText: {
+    color: "#cbd5e1",
+    fontSize: 13,
   },
 });
