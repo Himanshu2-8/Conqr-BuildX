@@ -5,6 +5,7 @@ import { HomeScreen } from "../HomeScreen";
 import { RunScreen } from "../RunScreen";
 import { LeaderboardScreen } from "../Leaderboard";
 import { QuestsScreen } from "../Quests";
+import { ProfileScreen } from "../Profile";
 
 const Stack = createNativeStackNavigator();
 
@@ -24,6 +25,7 @@ export function AppStack() {
     >
       <Stack.Screen name="Home" component={HomeScreen} options={{ title: "Dashboard", headerShown: false }} />
       <Stack.Screen name="Quests" component={QuestsScreen} options={{ title: "Quests" }} />
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: "Profile" }} />
       <Stack.Screen name="Run" component={RunScreen} options={{ title: "Live Run", headerShown: false }} />
       <Stack.Screen name="Leaderboard" component={LeaderboardScreen} options={{ title: "Leaderboard" }} />
     </Stack.Navigator>

@@ -465,6 +465,10 @@ export function HomeScreen() {
           <MaterialCommunityIcons name="flag-checkered" size={16} color="#FCA5A5" />
           <Text style={styles.footerBtnText}>Quests</Text>
         </Pressable>
+        <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Profile")}>
+          <MaterialCommunityIcons name="account-circle-outline" size={16} color="#FCA5A5" />
+          <Text style={styles.footerBtnText}>Profile</Text>
+        </Pressable>
         <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Leaderboard")}>
           <MaterialCommunityIcons name="trophy" size={16} color="#FCA5A5" />
           <Text style={styles.footerBtnText}>Leaderboard</Text>
