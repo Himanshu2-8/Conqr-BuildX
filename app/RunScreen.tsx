@@ -10,6 +10,7 @@ import { saveRunSession, type SaveRunResult, updateSessionClaimedArea } from "./
 import { subscribeAllTerritories, updateTerritoryForRun, type TerritoryState } from "./services/territory";
 import { fetchMissionsSummary } from "./services/missions";
 import { useEntranceAnim } from "./hooks/useEntranceAnim";
+import { resolveValidation, type TelemetryPoint } from "./utils/cheatDetector";
 
 function formatDuration(totalSeconds: number) {
   const hrs = Math.floor(totalSeconds / 3600);
@@ -25,6 +26,15 @@ function formatPace(paceMinPerKm: number | null) {
   const minutes = Math.floor(paceMinPerKm);
   const seconds = Math.round((paceMinPerKm - minutes) * 60);
   return `${minutes}:${String(seconds).padStart(2, "0")} /km`;
+}
+
+function mapTrackPointsToTelemetry(points: ReturnType<typeof useRunTracker>["points"]): TelemetryPoint[] {
+  return points.map((point) => ({
+    lat: point.latitude,
+    lon: point.longitude,
+    ts_ms: point.timestamp,
+    gps_accuracy: point.accuracy ?? undefined,
+  }));
 }
 
 const DEFAULT_REGION: Region = {
@@ -119,6 +129,12 @@ export function RunScreen() {
 
     setSaving(true);
     try {
+      const telemetryPoints = mapTrackPointsToTelemetry(points);
+      const validation = await resolveValidation({
+        userId: user.uid,
+        points: telemetryPoints,
+      });
+
       let beforeCompleted = new Set<string>();
       try {
         const beforeSummary = await fetchMissionsSummary(user.uid);
@@ -126,6 +142,7 @@ export function RunScreen() {
       } catch {
         beforeCompleted = new Set<string>();
       }
+
       const result = await saveRunSession({
         userId: user.uid,
         startedAtMs,
@@ -134,7 +151,9 @@ export function RunScreen() {
         distanceMeters,
         paceMinPerKm,
         points,
+        validation,
       });
+
       setLastSave(result);
       if (result.isValid) {
         const previousAreaM2 = territory?.areaM2 ?? 0;
@@ -145,6 +164,7 @@ export function RunScreen() {
           await updateSessionClaimedArea(result.sessionId, claimedAreaDeltaM2);
         }
       }
+
       let unlockedNow: { title: string }[] = [];
       try {
         const afterSummary = await fetchMissionsSummary(user.uid);
@@ -152,13 +172,14 @@ export function RunScreen() {
       } catch {
         unlockedNow = [];
       }
+
       const unlockedLine =
         unlockedNow.length > 0 ? `\nMission unlocked: ${unlockedNow.map((quest) => quest.title).join(", ")}` : "";
       Alert.alert(
         "Run saved",
         result.isValid
           ? `Session ${result.sessionId} saved.${unlockedLine}`
-          : `Saved as invalid: ${result.invalidReason ?? "Unknown reason"}`
+          : `Saved as invalid: ${result.invalidReason ?? "Unknown reason"}\nValidation: ${result.validation.status}`
       );
     } catch (saveErr: unknown) {
       const message = saveErr instanceof Error ? saveErr.message : "Failed to save run";
@@ -296,6 +317,11 @@ export function RunScreen() {
               <Text style={styles.saveTitle}>Last Save</Text>
               <Text style={styles.saveText}>Session: {lastSave.sessionId}</Text>
               <Text style={styles.saveText}>Valid: {lastSave.isValid ? "Yes" : "No"}</Text>
+              <Text style={styles.saveText}>Validation: {lastSave.validation.status}</Text>
+              <Text style={styles.saveText}>Confidence: {lastSave.validation.confidence.toFixed(2)}</Text>
+              {lastSave.validation.reasons.length > 0 ? (
+                <Text style={styles.saveText}>Reasons: {lastSave.validation.reasons.join(", ")}</Text>
+              ) : null}
               {lastSave.invalidReason ? <Text style={styles.saveText}>Reason: {lastSave.invalidReason}</Text> : null}
             </View>
           ) : null}

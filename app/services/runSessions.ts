@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import type { TrackPoint } from "../hooks/useRunTracker";
+import type { ValidationResult } from "../utils/cheatDetector";
 
 type SaveRunInput = {
   userId: string;
@@ -19,12 +20,14 @@ type SaveRunInput = {
   distanceMeters: number;
   paceMinPerKm: number | null;
   points: TrackPoint[];
+  validation: ValidationResult;
 };
 
 export type SaveRunResult = {
   sessionId: string;
   isValid: boolean;
   invalidReason: string | null;
+  validation: ValidationResult;
 };
 
 function validateRun(input: SaveRunInput): { isValid: boolean; invalidReason: string | null } {
@@ -34,14 +37,17 @@ function validateRun(input: SaveRunInput): { isValid: boolean; invalidReason: st
   if (input.distanceMeters < 15) {
     return { isValid: false, invalidReason: "Distance too short (<15m)" };
   }
-  if (input.points.length < 3) {
-    return { isValid: false, invalidReason: "Not enough GPS points (<3)" };
+  if (input.points.length < 2) {
+    return { isValid: false, invalidReason: "Not enough GPS points (<2)" };
   }
   return { isValid: true, invalidReason: null };
 }
 
 export async function saveRunSession(input: SaveRunInput): Promise<SaveRunResult> {
-  const { isValid, invalidReason } = validateRun(input);
+  const basicCheck = validateRun(input);
+  const validationIsValid = input.validation.status === "valid";
+  const isValid = basicCheck.isValid && validationIsValid;
+  const invalidReason = basicCheck.invalidReason ?? (validationIsValid ? null : input.validation.reasons.join(", "));
 
   const sessionRef = await addDoc(collection(db, "sessions"), {
     userId: input.userId,
@@ -54,6 +60,16 @@ export async function saveRunSession(input: SaveRunInput): Promise<SaveRunResult
     claimedAreaDeltaM2: 0,
     isValid,
     invalidReason,
+    validation: {
+      status: input.validation.status,
+      confidence: input.validation.confidence,
+      reasons: input.validation.reasons,
+      updated_at: input.validation.updated_at,
+      details: {
+        features: input.validation.features,
+        flagged_segments: input.validation.flagged_segments,
+      },
+    },
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -99,6 +115,7 @@ export async function saveRunSession(input: SaveRunInput): Promise<SaveRunResult
     sessionId: sessionRef.id,
     isValid,
     invalidReason,
+    validation: input.validation,
   };
 }
 
