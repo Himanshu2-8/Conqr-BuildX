@@ -306,7 +306,7 @@ export function HomeScreen() {
     () => (currentLocation ? [currentLocation, ...territoryRevealPoints] : territoryRevealPoints),
     [currentLocation, territoryRevealPoints]
   );
-  const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
+  const { fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
     user?.uid ?? null,
     mapRegion,
     extraRevealPoints
@@ -537,7 +537,6 @@ export function HomeScreen() {
                   width={mapLayout.width}
                   height={mapLayout.height}
                   region={mapRegion}
-                  revealPoints={revealPoints}
                   revealPolygons={visibleTerritories.map((shape) => shape.coordinates)}
                 />
               ) : null}
@@ -656,6 +655,10 @@ export function HomeScreen() {
         <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Quests")}>
           <MaterialCommunityIcons name="flag-checkered" size={16} color="#FCA5A5" />
           <Text style={styles.footerBtnText}>Quests</Text>
+        </Pressable>
+        <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Friends")}>
+          <MaterialCommunityIcons name="account-multiple-outline" size={16} color="#FCA5A5" />
+          <Text style={styles.footerBtnText}>Friends</Text>
         </Pressable>
         <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Profile")}>
           <MaterialCommunityIcons name="account-circle-outline" size={16} color="#FCA5A5" />

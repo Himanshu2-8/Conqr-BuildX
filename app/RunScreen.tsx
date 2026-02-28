@@ -95,7 +95,7 @@ export function RunScreen() {
         : [...routeCoordinates, ...territoryRevealPoints],
     [currentLocation, routeCoordinates, territoryRevealPoints]
   );
-  const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
+  const { fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
     user?.uid ?? null,
     mapRegion,
     extraRevealPoints
@@ -294,7 +294,6 @@ export function RunScreen() {
                 width={mapLayout.width}
                 height={mapLayout.height}
                 region={mapRegion}
-                revealPoints={revealPoints}
                 revealPolygons={allTerritories.map((shape) => shape.coordinates)}
               />
             ) : null}
