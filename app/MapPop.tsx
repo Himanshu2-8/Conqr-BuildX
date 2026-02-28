@@ -4,9 +4,11 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { useNavigation } from "@react-navigation/native";
 // @ts-ignore react-native-maps types are resolved at runtime in this Expo app
 import MapView, { Marker, Polygon, type Region } from "react-native-maps";
+import * as Location from "expo-location";
 import { subscribeAllTerritories, fetchUsernamesForUserIds, type TerritoryState } from "./services/territory";
 import { useAuth } from "./context/AuthContext";
 
+const USER_ZOOM_DELTA = 0.018; // ~2 km radius
 const FALLBACK_REGION: Region = {
   latitude: 20.5937,
   longitude: 78.9629,
@@ -111,6 +113,28 @@ export function MapPopScreen() {
   const [currentLocation, setCurrentLocation] = useState<MapCoordinate | null>(null);
   const [usernameMap, setUsernameMap] = useState<Map<string, string>>(new Map());
 
+  // Eagerly get user location so the map starts centred on them
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted" || !active) return;
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (!active) return;
+        const loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+        setCurrentLocation(loc);
+        if (mapRef.current) {
+          mapRef.current.animateToRegion(
+            { ...loc, latitudeDelta: USER_ZOOM_DELTA, longitudeDelta: USER_ZOOM_DELTA },
+            600,
+          );
+        }
+      } catch {}
+    })();
+    return () => { active = false; };
+  }, []);
+
   useEffect(() => {
     const unsub = subscribeAllTerritories(
       (data) => {
@@ -165,8 +189,20 @@ export function MapPopScreen() {
     return `${visibleTerritories.length}:${territoryPointCount}:${locationSig}`;
   }, [visibleTerritories, currentLocation]);
 
-  const computedRegion = useMemo(() => getRegionFromTerritories(visibleTerritories) ?? FALLBACK_REGION, [visibleTerritories]);
+  // Prefer user location at ~2km zoom; fall back to territory bounds or FALLBACK.
+  const computedRegion = useMemo(() => {
+    if (currentLocation) {
+      return {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        latitudeDelta: USER_ZOOM_DELTA,
+        longitudeDelta: USER_ZOOM_DELTA,
+      };
+    }
+    return getRegionFromTerritories(visibleTerritories) ?? FALLBACK_REGION;
+  }, [visibleTerritories, currentLocation]);
 
+  // Center map on user's location at ~2km zoom whenever location updates
   useEffect(() => {
     if (!mapRef.current) {
       return;
@@ -180,29 +216,28 @@ export function MapPopScreen() {
     if (lastAutoZoomSignatureRef.current === autoZoomSignature) {
       return;
     }
-    const territoryPoints = visibleTerritories.flatMap((t) => t.coordinates);
-    const fitPoints = currentLocation ? [currentLocation, ...territoryPoints] : territoryPoints;
-    if (fitPoints.length < 2) {
-      if (!currentLocation) {
-        return;
-      }
+    if (currentLocation) {
       mapRef.current.animateToRegion(
         {
           latitude: currentLocation.latitude,
           longitude: currentLocation.longitude,
-          latitudeDelta: 0.008,
-          longitudeDelta: 0.008,
+          latitudeDelta: USER_ZOOM_DELTA,
+          longitudeDelta: USER_ZOOM_DELTA,
         },
-        650
+        650,
       );
       lastAutoZoomSignatureRef.current = autoZoomSignature;
       return;
     }
-    mapRef.current.fitToCoordinates(fitPoints, {
-      edgePadding: { top: 110, right: 24, bottom: 150, left: 24 },
-      animated: true,
-    });
-    lastAutoZoomSignatureRef.current = autoZoomSignature;
+
+    const territoryPoints = visibleTerritories.flatMap((t) => t.coordinates);
+    if (territoryPoints.length >= 2) {
+      mapRef.current.fitToCoordinates(territoryPoints, {
+        edgePadding: { top: 110, right: 24, bottom: 150, left: 24 },
+        animated: true,
+      });
+      lastAutoZoomSignatureRef.current = autoZoomSignature;
+    }
   }, [autoZoomSignature, visibleTerritories, currentLocation, layout.width, layout.height]);
 
   return (

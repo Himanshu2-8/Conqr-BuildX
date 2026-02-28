@@ -5,6 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import MapView, { Marker, Polygon, type Region } from "react-native-maps";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Location from "expo-location";
 
 import { FogOverlay } from "./components/FogOverlay";
 import { useAuth } from "./context/AuthContext";
@@ -24,6 +25,8 @@ import {
 import { LiveBadge } from "./ui/LiveBadge";
 import { fetchUserProfile } from "./services/profile";
 
+// ~2 km radius → latitudeDelta ≈ 0.018
+const USER_ZOOM_DELTA = 0.018;
 const FALLBACK_REGION: Region = {
   latitude: 20.5937,
   longitude: 78.9629,
@@ -185,6 +188,34 @@ export function HomeScreen() {
   const [mapLayout, setMapLayout] = React.useState({ width: 0, height: 0 });
   const [activePrediction, setActivePrediction] = React.useState<Prediction | null>(null);
   const [recentPredictions, setRecentPredictions] = React.useState<Prediction[]>([]);
+  const [initialLocationFetched, setInitialLocationFetched] = React.useState(false);
+
+  // ── Eagerly fetch user location on mount so map starts centered ──
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted" || !active) return;
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        if (!active) return;
+        const loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+        setCurrentLocation(loc);
+        const userRegion: Region = {
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          latitudeDelta: USER_ZOOM_DELTA,
+          longitudeDelta: USER_ZOOM_DELTA,
+        };
+        setMapRegion(userRegion);
+        if (mapRef.current) {
+          mapRef.current.animateToRegion(userRegion, 600);
+        }
+      } catch {}
+      if (active) setInitialLocationFetched(true);
+    })();
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -340,8 +371,15 @@ export function HomeScreen() {
   }, [user]);
 
   const name = profileUsername.trim() || user?.displayName || "Runner";
-  const allRegion = getRegionFromTerritories(allTerritories);
-  const territoryRegion = allRegion ?? (territory?.coordinates ? getRegionFromPolygon(territory.coordinates) : FALLBACK_REGION);
+  // Prefer user's current location at ~2km zoom; fall back to territory or FALLBACK.
+  const territoryRegion: Region = currentLocation
+    ? {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        latitudeDelta: USER_ZOOM_DELTA,
+        longitudeDelta: USER_ZOOM_DELTA,
+      }
+    : getRegionFromTerritories(allTerritories) ?? (territory?.coordinates ? getRegionFromPolygon(territory.coordinates) : FALLBACK_REGION);
   const visibleTerritories = React.useMemo(() => {
     if (!currentLocation) {
       return allTerritories;
@@ -416,6 +454,8 @@ export function HomeScreen() {
     territoryRegion.longitudeDelta,
   ]);
 
+  // When we get the user's location, always center the map on them at ~2km zoom.
+  // This ensures the dashboard map never shows all of New Delhi; only the user's area.
   useEffect(() => {
     if (!mapRef.current) {
       return;
@@ -429,44 +469,28 @@ export function HomeScreen() {
     if (lastAutoZoomSignatureRef.current === autoZoomSignature) {
       return;
     }
-    const territoryPoints = visibleTerritories.flatMap((shape) => shape.coordinates) as MapCoordinate[];
-    const fitPoints = currentLocation ? [currentLocation, ...territoryPoints] : territoryPoints;
+    if (currentLocation) {
+      const userRegion: Region = {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        latitudeDelta: USER_ZOOM_DELTA,
+        longitudeDelta: USER_ZOOM_DELTA,
+      };
+      setMapRegion(userRegion);
+      mapRef.current.animateToRegion(userRegion, 650);
+      lastAutoZoomSignatureRef.current = autoZoomSignature;
+      return;
+    }
 
-    if (fitPoints.length >= 2) {
-      mapRef.current.fitToCoordinates(fitPoints, {
+    const territoryPoints = visibleTerritories.flatMap((shape) => shape.coordinates) as MapCoordinate[];
+    if (territoryPoints.length >= 2) {
+      mapRef.current.fitToCoordinates(territoryPoints, {
         edgePadding: { top: 34, right: 22, bottom: 34, left: 22 },
         animated: true,
       });
       lastAutoZoomSignatureRef.current = autoZoomSignature;
-      return;
     }
-    if (!currentLocation) {
-      return;
-    }
-    const nextRegion: Region = {
-      latitude: currentLocation.latitude,
-      longitude: currentLocation.longitude,
-      latitudeDelta: 0.008,
-      longitudeDelta: 0.008,
-    };
-    setMapRegion(nextRegion);
-    mapRef.current.animateToRegion(nextRegion, 650);
-    lastAutoZoomSignatureRef.current = autoZoomSignature;
   }, [autoZoomSignature, visibleTerritories, currentLocation, mapLayout.width, mapLayout.height]);
-
-  useEffect(() => {
-    if (!currentLocation || territory) {
-      return;
-    }
-
-    setMapRegion((prev) => ({
-      ...prev,
-      latitude: currentLocation.latitude,
-      longitude: currentLocation.longitude,
-      latitudeDelta: Math.min(prev.latitudeDelta, 0.02),
-      longitudeDelta: Math.min(prev.longitudeDelta, 0.02),
-    }));
-  }, [currentLocation, territory]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
