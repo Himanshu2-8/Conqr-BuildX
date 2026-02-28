@@ -394,7 +394,7 @@ export function RunScreen() {
                   hitSlop={8}
                   style={({ pressed }) => [
                     styles.modeButton,
-                    active && (mode === "walking" ? styles.modeButtonActiveWalking : styles.modeButtonActive),
+                    active && styles.modeButtonActive,
                     pressed && styles.pressed,
                     isRunning && styles.disabledButton,
                   ]}
@@ -633,10 +633,6 @@ const styles = StyleSheet.create({
     borderColor: "#DC2626",
     backgroundColor: "#DC2626",
   },
-  modeButtonActiveWalking: {
-    borderColor: "rgba(220,38,38,0.75)",
-    backgroundColor: "rgba(220,38,38,0.22)",
-  },
   modeButtonText: {
     color: "#FCA5A5",
     fontSize: 12,
@@ -678,6 +674,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 });
+
 
 
 

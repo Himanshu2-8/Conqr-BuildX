@@ -11,8 +11,10 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import type { ActivityType } from "../types/activity";
+import { DISTANCE_WEIGHT_BY_ACTIVITY } from "./cityBattle";
 
-export type LeaderboardMetric = "area" | "distance";
+export type LeaderboardMetric = "area" | "distance" | "score";
 export type LeaderboardPeriod = "daily" | "weekly";
 
 export type LeaderboardRow = {
@@ -27,6 +29,7 @@ type SessionDoc = {
   distanceM?: unknown;
   claimedAreaDeltaM2?: unknown;
   isValid?: unknown;
+  activityType?: unknown;
 };
 
 type UserDoc = {
@@ -58,6 +61,14 @@ function parseSession(docSnap: QueryDocumentSnapshot<DocumentData>): SessionDoc 
   return docSnap.data() as SessionDoc;
 }
 
+function normalizedRunScore(data: SessionDoc): number {
+  const distanceM = typeof data.distanceM === "number" ? data.distanceM : 0;
+  const areaM2 = typeof data.claimedAreaDeltaM2 === "number" ? data.claimedAreaDeltaM2 : 0;
+  const activityType: ActivityType = data.activityType === "cycling" ? "cycling" : "walking";
+  const weight = DISTANCE_WEIGHT_BY_ACTIVITY[activityType];
+  return Math.max(0, areaM2) + Math.max(0, distanceM) * weight;
+}
+
 async function aggregateLeaderboardFromSessionSnapshot(
   sessionSnapshots: QuerySnapshot<DocumentData>,
   metric: LeaderboardMetric
@@ -75,8 +86,15 @@ async function aggregateLeaderboardFromSessionSnapshot(
       return;
     }
 
-    const rawValue = metric === "distance" ? data.distanceM : data.claimedAreaDeltaM2;
-    const value = typeof rawValue === "number" ? rawValue : 0;
+    let value = 0;
+    if (metric === "distance") {
+      value = typeof data.distanceM === "number" ? data.distanceM : 0;
+    } else if (metric === "area") {
+      value = typeof data.claimedAreaDeltaM2 === "number" ? data.claimedAreaDeltaM2 : 0;
+    } else {
+      value = normalizedRunScore(data);
+    }
+
     totals.set(userId, (totals.get(userId) ?? 0) + value);
   });
 
