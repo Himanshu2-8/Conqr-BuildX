@@ -35,7 +35,7 @@ def test_clear_walk_marks_valid() -> None:
         {"lat": 0.0, "lon": 0.00054, "ts_ms": 60000, "gps_accuracy": 7.0},
     ]
 
-    result = deterministic_validate(points)
+    result = deterministic_validate(points, activity_type="walking")
 
     assert result["status"] == "valid"
     assert "likely_walk" in result["reasons"]
@@ -53,6 +53,20 @@ def test_clear_vehicle_marks_flagged() -> None:
 
     assert result["status"] == "flagged"
     assert "likely_vehicle" in result["reasons"]
+
+
+def test_clear_cycling_marks_valid() -> None:
+    points = [
+        {"lat": 0.0, "lon": 0.0, "ts_ms": 0},
+        {"lat": 0.0, "lon": 0.0006, "ts_ms": 15000},
+        {"lat": 0.0, "lon": 0.0012, "ts_ms": 30000},
+        {"lat": 0.0, "lon": 0.0018, "ts_ms": 45000},
+    ]
+
+    result = deterministic_validate(points, activity_type="cycling")
+
+    assert result["status"] == "valid"
+    assert "likely_cycle" in result["reasons"]
 
 
 def test_too_few_points_marks_flagged() -> None:

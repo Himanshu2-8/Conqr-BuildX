@@ -1,6 +1,9 @@
 # Deterministic Run Validation (No ML)
 
 This module adds explainable rules-only speed/cheating detection for run telemetry.
+It supports two activity sections:
+- `walking` (includes running)
+- `cycling`
 
 ## Run locally
 
@@ -27,6 +30,7 @@ For physical device testing, use your LAN IP instead of `127.0.0.1`.
 {
   "run_id": "demo-run-1",
   "user_id": "demo-user-1",
+  "activity_type": "walking",
   "points": [
     { "lat": 12.9716, "lon": 77.5946, "ts_ms": 1710000000000, "gps_accuracy": 8.5 },
     { "lat": 12.97162, "lon": 77.59472, "ts_ms": 1710000005000, "gps_accuracy": 9.1 },
@@ -63,11 +67,12 @@ For physical device testing, use your LAN IP instead of `127.0.0.1`.
 ```bash
 curl -X POST "http://127.0.0.1:8000/validate_run" \
   -H "Content-Type: application/json" \
-  -d '{"run_id":"demo-run-teleport","user_id":"u1","points":[{"lat":0,"lon":0,"ts_ms":0},{"lat":0,"lon":0.003,"ts_ms":3000}]}'
+  -d '{"run_id":"demo-run-teleport","user_id":"u1","activity_type":"walking","points":[{"lat":0,"lon":0,"ts_ms":0},{"lat":0,"lon":0.003,"ts_ms":3000}]}'
 ```
 
 ## Demo tips
 
 - Valid walking run: 1-2 m/s average with good GPS accuracy.
 - Cheating run: add a 250m+ jump within 5 seconds to trigger `teleport_jump`.
-- Ambiguous run: keep average speed between 8 and 25 km/h to return `flagged` and trigger backend re-check.
+- Ambiguous run: keep average speed between 8 and 25 km/h for walking to get `flagged` and trigger backend re-check.
+- Valid cycling run: keep average speed in a realistic cycling range and use `activity_type: cycling`.

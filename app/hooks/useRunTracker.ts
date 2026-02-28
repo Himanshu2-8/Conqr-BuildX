@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as Location from "expo-location";
+import type { ActivityType } from "../types/activity";
 
 export type TrackPoint = {
   latitude: number;
@@ -16,15 +17,18 @@ type RunTrackerState = {
   paceMinPerKm: number | null;
   points: TrackPoint[];
   error: string | null;
-  startRun: () => Promise<boolean>;
+  startRun: (activityType: ActivityType) => Promise<boolean>;
   stopRun: () => void;
   resetRun: () => void;
 };
 
 const MIN_DISTANCE_DELTA_METERS = 3;
 const MAX_POINT_ACCURACY_METERS = 30;
-const MAX_SEGMENT_DISTANCE_METERS = 80;
-const MAX_SEGMENT_SPEED_MPS = 7.5;
+const MAX_SEGMENT_DISTANCE_METERS = 120;
+const MAX_SEGMENT_SPEED_BY_ACTIVITY: Record<ActivityType, number> = {
+  walking: 7.5,
+  cycling: 16,
+};
 
 function toRadians(value: number) {
   return (value * Math.PI) / 180;
@@ -46,7 +50,12 @@ function isPoorAccuracy(point: TrackPoint) {
   return typeof point.accuracy === "number" && point.accuracy > MAX_POINT_ACCURACY_METERS;
 }
 
-function isLikelyGpsJump(previous: TrackPoint, next: TrackPoint, segmentDistance: number) {
+function isLikelyGpsJump(
+  previous: TrackPoint,
+  next: TrackPoint,
+  segmentDistance: number,
+  activityType: ActivityType
+) {
   if (segmentDistance > MAX_SEGMENT_DISTANCE_METERS) {
     return true;
   }
@@ -57,7 +66,7 @@ function isLikelyGpsJump(previous: TrackPoint, next: TrackPoint, segmentDistance
   }
 
   const impliedSpeed = segmentDistance / dtSeconds;
-  return impliedSpeed > MAX_SEGMENT_SPEED_MPS;
+  return impliedSpeed > MAX_SEGMENT_SPEED_BY_ACTIVITY[activityType];
 }
 
 export function useRunTracker(): RunTrackerState {
@@ -69,6 +78,7 @@ export function useRunTracker(): RunTrackerState {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
+  const activityTypeRef = useRef<ActivityType>("walking");
 
   const paceMinPerKm = useMemo(() => {
     if (distanceMeters < 1) {
@@ -90,8 +100,9 @@ export function useRunTracker(): RunTrackerState {
     };
   }, []);
 
-  const startRun = async () => {
+  const startRun = async (activityType: ActivityType) => {
     setError(null);
+    activityTypeRef.current = activityType;
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== "granted") {
@@ -99,27 +110,27 @@ export function useRunTracker(): RunTrackerState {
         return false;
       }
 
-    setElapsedSeconds(0);
-    setDistanceMeters(0);
-    setPoints([]);
+      setElapsedSeconds(0);
+      setDistanceMeters(0);
+      setPoints([]);
 
-    try {
-      const initialPosition = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const initialPoint: TrackPoint = {
-        latitude: initialPosition.coords.latitude,
-        longitude: initialPosition.coords.longitude,
-        accuracy: initialPosition.coords.accuracy ?? null,
-        speed: initialPosition.coords.speed ?? null,
-        timestamp: initialPosition.timestamp,
-      };
-      if (!isPoorAccuracy(initialPoint)) {
-        setPoints([initialPoint]);
+      try {
+        const initialPosition = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        const initialPoint: TrackPoint = {
+          latitude: initialPosition.coords.latitude,
+          longitude: initialPosition.coords.longitude,
+          accuracy: initialPosition.coords.accuracy ?? null,
+          speed: initialPosition.coords.speed ?? null,
+          timestamp: initialPosition.timestamp,
+        };
+        if (!isPoorAccuracy(initialPoint)) {
+          setPoints([initialPoint]);
+        }
+      } catch {
+        setError("Unable to get initial location. Tracking will continue when GPS updates arrive.");
       }
-    } catch {
-      setError("Unable to get initial location. Tracking will continue when GPS updates arrive.");
-    }
 
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -148,24 +159,27 @@ export function useRunTracker(): RunTrackerState {
           };
 
           setPoints((prev) => {
-          if (isPoorAccuracy(nextPoint)) {
-            return prev;
-          }
+            if (isPoorAccuracy(nextPoint)) {
+              return prev;
+            }
 
             if (prev.length === 0) {
               return [nextPoint];
             }
 
-          const lastPoint = prev[prev.length - 1];
-          const segmentDistance = haversineMeters(lastPoint, nextPoint);
-          if (segmentDistance >= MIN_DISTANCE_DELTA_METERS && !isLikelyGpsJump(lastPoint, nextPoint, segmentDistance)) {
-            setDistanceMeters((d) => d + segmentDistance);
-            return [...prev, nextPoint];
-          }
-          return prev;
-        });
-      }
-    );
+            const lastPoint = prev[prev.length - 1];
+            const segmentDistance = haversineMeters(lastPoint, nextPoint);
+            if (
+              segmentDistance >= MIN_DISTANCE_DELTA_METERS &&
+              !isLikelyGpsJump(lastPoint, nextPoint, segmentDistance, activityTypeRef.current)
+            ) {
+              setDistanceMeters((d) => d + segmentDistance);
+              return [...prev, nextPoint];
+            }
+            return prev;
+          });
+        }
+      );
 
       setIsRunning(true);
       return true;
@@ -194,6 +208,7 @@ export function useRunTracker(): RunTrackerState {
     setDistanceMeters(0);
     setPoints([]);
     setError(null);
+    activityTypeRef.current = "walking";
   };
 
   return {

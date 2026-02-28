@@ -11,6 +11,7 @@ import {
 import { db } from "../lib/firebase";
 import type { TrackPoint } from "../hooks/useRunTracker";
 import type { ValidationResult } from "../utils/cheatDetector";
+import type { ActivityType } from "../types/activity";
 
 type SaveRunInput = {
   userId: string;
@@ -21,6 +22,7 @@ type SaveRunInput = {
   paceMinPerKm: number | null;
   points: TrackPoint[];
   validation: ValidationResult;
+  activityType: ActivityType;
 };
 
 export type SaveRunResult = {
@@ -28,6 +30,7 @@ export type SaveRunResult = {
   isValid: boolean;
   invalidReason: string | null;
   validation: ValidationResult;
+  activityType: ActivityType;
 };
 
 function validateRun(input: SaveRunInput): { isValid: boolean; invalidReason: string | null } {
@@ -58,6 +61,7 @@ export async function saveRunSession(input: SaveRunInput): Promise<SaveRunResult
     paceMinPerKm: input.paceMinPerKm ?? null,
     pointsCount: input.points.length,
     claimedAreaDeltaM2: 0,
+    activityType: input.activityType,
     isValid,
     invalidReason,
     validation: {
@@ -116,6 +120,7 @@ export async function saveRunSession(input: SaveRunInput): Promise<SaveRunResult
     isValid,
     invalidReason,
     validation: input.validation,
+    activityType: input.activityType,
   };
 }
 

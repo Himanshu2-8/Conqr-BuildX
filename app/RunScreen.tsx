@@ -12,6 +12,8 @@ import { saveRunSession, type SaveRunResult, updateSessionClaimedArea } from "./
 import { subscribeAllTerritories, updateTerritoryForRun, type TerritoryState } from "./services/territory";
 import { fetchMissionsSummary } from "./services/missions";
 import { useEntranceAnim } from "./hooks/useEntranceAnim";
+import { ACTIVITY_LABELS, type ActivityType } from "./types/activity";
+import { recordRunCityScore } from "./services/cityBattle";
 import { resolveValidation, type TelemetryPoint } from "./utils/cheatDetector";
 
 function formatDuration(totalSeconds: number) {
@@ -58,6 +60,7 @@ export function RunScreen() {
     useRunTracker();
   const [saving, setSaving] = React.useState(false);
   const [runStartedAtMs, setRunStartedAtMs] = React.useState<number | null>(null);
+  const [activityType, setActivityType] = React.useState<ActivityType>("walking");
   const [lastSave, setLastSave] = React.useState<SaveRunResult | null>(null);
   const [territory, setTerritory] = React.useState<TerritoryState | null>(null);
   const [allTerritories, setAllTerritories] = React.useState<TerritoryState[]>([]);
@@ -150,7 +153,7 @@ export function RunScreen() {
   }, [user]);
 
   const onStart = async () => {
-    const started = await startRun();
+    const started = await startRun(activityType);
     if (started) {
       setLastSave(null);
       setRunStartedAtMs(Date.now());
@@ -173,6 +176,7 @@ export function RunScreen() {
       const validation = await resolveValidation({
         userId: user.uid,
         points: telemetryPoints,
+        activityType,
       });
 
       let beforeCompleted = new Set<string>();
@@ -192,17 +196,30 @@ export function RunScreen() {
         paceMinPerKm,
         points,
         validation,
+        activityType,
       });
 
       setLastSave(result);
+      let runScore = 0;
       if (result.isValid) {
         const previousAreaM2 = territory?.areaM2 ?? 0;
         const updatedTerritory = await updateTerritoryForRun(user.uid, points);
+        const claimedAreaDeltaM2 = updatedTerritory
+          ? Math.max(updatedTerritory.areaM2 - previousAreaM2, 0)
+          : 0;
+
         if (updatedTerritory) {
           setTerritory(updatedTerritory);
-          const claimedAreaDeltaM2 = Math.max(updatedTerritory.areaM2 - previousAreaM2, 0);
-          await updateSessionClaimedArea(result.sessionId, claimedAreaDeltaM2);
         }
+
+        await updateSessionClaimedArea(result.sessionId, claimedAreaDeltaM2);
+        runScore = await recordRunCityScore({
+          userId: user.uid,
+          sessionId: result.sessionId,
+          activityType,
+          distanceM: distanceMeters,
+          claimedAreaDeltaM2,
+        });
       }
 
       let unlockedNow: { title: string }[] = [];
@@ -218,7 +235,7 @@ export function RunScreen() {
       Alert.alert(
         "Run saved",
         result.isValid
-          ? `Session ${result.sessionId} saved.${unlockedLine}`
+          ? `Session ${result.sessionId} saved (${ACTIVITY_LABELS[activityType]}).\nWeekly city score +${Math.round(runScore).toLocaleString()} pts.${unlockedLine}`
           : `Saved as invalid: ${result.invalidReason ?? "Unknown reason"}\nValidation: ${result.validation.status}`
       );
     } catch (saveErr: unknown) {
@@ -350,6 +367,28 @@ export function RunScreen() {
         ) : null}
 
         <View style={styles.actions}>
+          <View style={styles.modeRow}>
+            {(Object.keys(ACTIVITY_LABELS) as ActivityType[]).map((mode) => {
+              const active = activityType === mode;
+              return (
+                <Pressable
+                  key={mode}
+                  android_ripple={{ color: "rgba(255,255,255,0.10)" }}
+                  hitSlop={8}
+                  style={({ pressed }) => [
+                    styles.modeButton,
+                    active && (mode === "walking" ? styles.modeButtonActiveWalking : styles.modeButtonActive),
+                    pressed && styles.pressed,
+                    isRunning && styles.disabledButton,
+                  ]}
+                  onPress={() => setActivityType(mode)}
+                  disabled={isRunning}
+                >
+                  <Text style={[styles.modeButtonText, active && styles.modeButtonTextActive]}>{ACTIVITY_LABELS[mode]}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
           {isRunning ? (
             <Pressable
               android_ripple={{ color: "rgba(255,255,255,0.12)" }}
@@ -544,6 +583,35 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.6,
   },
+  modeRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  modeButton: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "rgba(220,38,38,0.35)",
+    backgroundColor: "rgba(17,17,17,0.95)",
+    alignItems: "center",
+  },
+  modeButtonActive: {
+    borderColor: "#DC2626",
+    backgroundColor: "#DC2626",
+  },
+  modeButtonActiveWalking: {
+    borderColor: "rgba(220,38,38,0.75)",
+    backgroundColor: "rgba(220,38,38,0.22)",
+  },
+  modeButtonText: {
+    color: "#FCA5A5",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  modeButtonTextActive: {
+    color: "#ffffff",
+  },
   saveCard: {
     borderWidth: 1,
     borderColor: "rgba(127, 29, 29, 0.30)",
@@ -577,3 +645,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -13,6 +13,7 @@ import { useFogOfWar } from "./hooks/useFogOfWar";
 import { fetchDashboardSummary, type DashboardSummary } from "./services/dashboard";
 import { subscribeAllTerritories, type TerritoryState } from "./services/territory";
 import { subscribeLeaderboard, type LeaderboardRow } from "./services/leaderboard";
+import { subscribeWeeklyCityBattle, type CityBattleRow } from "./services/cityBattle";
 import { fetchMissionsSummary, type QuestProgress } from "./services/missions";
 
 const FALLBACK_REGION: Region = {
@@ -125,6 +126,9 @@ export function HomeScreen() {
   const [leaderboard, setLeaderboard] = React.useState<LeaderboardRow[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = React.useState(false);
   const [leaderboardError, setLeaderboardError] = React.useState<string | null>(null);
+  const [cityBattleRows, setCityBattleRows] = React.useState<CityBattleRow[]>([]);
+  const [cityBattleLoading, setCityBattleLoading] = React.useState(false);
+  const [cityBattleError, setCityBattleError] = React.useState<string | null>(null);
   const [missions, setMissions] = React.useState<QuestProgress[]>([]);
   const [missionsLoading, setMissionsLoading] = React.useState(false);
   const [missionsError, setMissionsError] = React.useState<string | null>(null);
@@ -197,6 +201,22 @@ export function HomeScreen() {
       (err) => {
         setLeaderboardError(err.message || "Failed to load leaderboard");
         setLeaderboardLoading(false);
+      }
+    );
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    setCityBattleLoading(true);
+    setCityBattleError(null);
+    const unsubscribe = subscribeWeeklyCityBattle(
+      (rows) => {
+        setCityBattleRows(rows.slice(0, 5));
+        setCityBattleLoading(false);
+      },
+      (err) => {
+        setCityBattleError(err.message || "Failed to load city battle");
+        setCityBattleLoading(false);
       }
     );
     return unsubscribe;
@@ -498,6 +518,49 @@ export function HomeScreen() {
           </View>
         </GradientCard>
 
+        <GradientCard>
+          <View style={styles.cardHeader}>
+            <View style={styles.iconBox}>
+              <MaterialCommunityIcons name="city-variant-outline" size={18} color="#DC2626" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Territory Battle</Text>
+              <Text style={styles.hint}>Weekly city points (area + weighted distance)</Text>
+            </View>
+            <View style={styles.liveBadge}>
+              <Text style={styles.liveBadgeText}>LIVE</Text>
+            </View>
+          </View>
+
+          {cityBattleLoading ? <Text style={styles.hint}>Loading city battle...</Text> : null}
+          {cityBattleError ? <Text style={styles.error}>{cityBattleError}</Text> : null}
+          {!cityBattleLoading && !cityBattleError && cityBattleRows.length === 0 ? (
+            <Text style={styles.hint}>No city points this week yet.</Text>
+          ) : null}
+
+          <View style={{ gap: 10, marginTop: 8 }}>
+            {cityBattleRows.map((row, index) => {
+              const badge = getRankBadge(index + 1);
+              return (
+                <View key={`${row.weekKey}-${row.city}`} style={styles.lbRow}>
+                  <View style={styles.lbRankWrap}>
+                    <MaterialCommunityIcons name={badge.icon as any} size={16} color={badge.color} />
+                  </View>
+                  <View style={styles.lbMain}>
+                    <Text style={styles.lbName} numberOfLines={1}>
+                      {row.city}
+                    </Text>
+                    <Text style={styles.hint}>Runs: {row.totalRuns} - Updated: {row.updatedAtLabel}</Text>
+                  </View>
+                  <View style={styles.lbValueWrap}>
+                    <Text style={styles.lbValue}>{Math.round(row.score).toLocaleString()}</Text>
+                    <Text style={styles.lbUnit}>pts</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </GradientCard>
         <GradientCard>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}>
@@ -803,3 +866,14 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 });
+
+
+
+
+
+
+
+
+
+
+

@@ -1,3 +1,5 @@
+import type { ActivityType } from "../types/activity";
+
 export type ValidationStatus = "valid" | "flagged" | "cheating";
 
 export type ValidationReason =
@@ -5,6 +7,7 @@ export type ValidationReason =
   | "teleport_jump"
   | "impossible_speed"
   | "likely_walk"
+  | "likely_cycle"
   | "likely_vehicle"
   | "ambiguous_speed"
   | "low_gps_accuracy";
@@ -51,7 +54,10 @@ export const TELEPORT_JUMP_THRESHOLD_M = 200;
 export const TELEPORT_DT_THRESHOLD_S = 5;
 export const IMPOSSIBLE_SPEED_THRESHOLD_MPS = 45;
 export const WALK_AVG_SPEED_KMPH_MAX = 8;
-export const VEHICLE_AVG_SPEED_KMPH_MIN = 25;
+export const WALK_VEHICLE_SPEED_KMPH_MIN = 25;
+export const CYCLE_MIN_EXPECTED_KMPH = 4;
+export const CYCLE_MAX_EXPECTED_KMPH = 35;
+export const CYCLE_VEHICLE_SPEED_KMPH_MIN = 40;
 export const VEHICLE_DISTANCE_MIN_M = 200;
 export const LOW_GPS_ACCURACY_MEDIAN_M = 30;
 
@@ -183,7 +189,30 @@ function clamp01(value: number) {
   return Math.max(0, Math.min(1, value));
 }
 
-export function localValidate(points: TelemetryPoint[]): ValidationResult {
+function classifySpeed(activityType: ActivityType, avgSpeedKmph: number): ValidationReason {
+  if (activityType === "cycling") {
+    if (avgSpeedKmph > CYCLE_VEHICLE_SPEED_KMPH_MIN) {
+      return "likely_vehicle";
+    }
+    if (avgSpeedKmph >= CYCLE_MIN_EXPECTED_KMPH && avgSpeedKmph <= CYCLE_MAX_EXPECTED_KMPH) {
+      return "likely_cycle";
+    }
+    if (avgSpeedKmph < CYCLE_MIN_EXPECTED_KMPH) {
+      return "ambiguous_speed";
+    }
+    return "ambiguous_speed";
+  }
+
+  if (avgSpeedKmph < WALK_AVG_SPEED_KMPH_MAX) {
+    return "likely_walk";
+  }
+  if (avgSpeedKmph > WALK_VEHICLE_SPEED_KMPH_MIN) {
+    return "likely_vehicle";
+  }
+  return "ambiguous_speed";
+}
+
+export function localValidate(points: TelemetryPoint[], activityType: ActivityType = "walking"): ValidationResult {
   const nowIso = new Date().toISOString();
   if (points.length < MIN_POINTS) {
     return {
@@ -230,12 +259,7 @@ export function localValidate(points: TelemetryPoint[]): ValidationResult {
   }
 
   const avgSpeedKmph = features.avg_speed_mps * 3.6;
-  let speedBucket: ValidationReason = "ambiguous_speed";
-  if (avgSpeedKmph < WALK_AVG_SPEED_KMPH_MAX) {
-    speedBucket = "likely_walk";
-  } else if (avgSpeedKmph > VEHICLE_AVG_SPEED_KMPH_MIN) {
-    speedBucket = "likely_vehicle";
-  }
+  const speedBucket = classifySpeed(activityType, avgSpeedKmph);
   reasons.push(speedBucket);
 
   const gpsAccuracies = points
@@ -248,7 +272,7 @@ export function localValidate(points: TelemetryPoint[]): ValidationResult {
   }
 
   let status: ValidationStatus = "valid";
-  let confidence = 0.9;
+  let confidence = activityType === "cycling" ? 0.9 : 0.92;
 
   if (hasTeleport || hasImpossibleSpeed) {
     status = "cheating";
@@ -259,9 +283,6 @@ export function localValidate(points: TelemetryPoint[]): ValidationResult {
   } else if (speedBucket === "ambiguous_speed") {
     status = "flagged";
     confidence = 0.5;
-  } else {
-    status = "valid";
-    confidence = 0.92;
   }
 
   if (hasLowAccuracy) {
@@ -282,6 +303,7 @@ type ResolveValidationInput = {
   runId?: string;
   userId?: string;
   points: TelemetryPoint[];
+  activityType?: ActivityType;
 };
 
 /**
@@ -289,7 +311,8 @@ type ResolveValidationInput = {
  * http://127.0.0.1:8000
  */
 export async function resolveValidation(input: ResolveValidationInput): Promise<ValidationResult> {
-  const localResult = localValidate(input.points);
+  const activityType = input.activityType ?? "walking";
+  const localResult = localValidate(input.points, activityType);
   if (localResult.status === "valid" || localResult.status === "cheating") {
     return localResult;
   }
@@ -309,6 +332,7 @@ export async function resolveValidation(input: ResolveValidationInput): Promise<
         run_id: input.runId,
         user_id: input.userId,
         points: input.points,
+        activity_type: activityType,
       }),
     });
 

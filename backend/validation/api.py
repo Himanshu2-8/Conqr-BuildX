@@ -29,10 +29,11 @@ class TelemetryPoint(BaseModel):
 class ValidateRunRequest(BaseModel):
     run_id: Optional[str] = None
     user_id: Optional[str] = None
+    activity_type: Optional[str] = "walking"
     points: List[TelemetryPoint] = Field(default_factory=list)
 
 
-app = FastAPI(title="CONQR Deterministic Validation API", version="1.0.0")
+app = FastAPI(title="CONQR Deterministic Validation API", version="1.1.0")
 
 
 @app.get("/health")
@@ -45,7 +46,10 @@ def validate_run(payload: ValidateRunRequest) -> Dict[str, Any]:
     if len(payload.points) < 2:
         raise HTTPException(status_code=400, detail="At least 2 telemetry points are required.")
 
-    result = deterministic_validate([point.model_dump() for point in payload.points])
+    result = deterministic_validate(
+        [point.model_dump() for point in payload.points],
+        activity_type=payload.activity_type or "walking",
+    )
     return {
         "run_id": payload.run_id,
         "status": result["status"],

@@ -17,13 +17,19 @@ TELEPORT_JUMP_THRESHOLD_M = 200.0
 TELEPORT_DT_THRESHOLD_S = 5.0
 IMPOSSIBLE_SPEED_THRESHOLD_MPS = 45.0
 WALK_AVG_SPEED_KMPH_MAX = 8.0
-VEHICLE_AVG_SPEED_KMPH_MIN = 25.0
+WALK_VEHICLE_SPEED_KMPH_MIN = 25.0
+CYCLE_MIN_EXPECTED_KMPH = 4.0
+CYCLE_MAX_EXPECTED_KMPH = 35.0
+CYCLE_VEHICLE_SPEED_KMPH_MIN = 40.0
 VEHICLE_DISTANCE_MIN_M = 200.0
 LOW_GPS_ACCURACY_MEDIAN_M = 30.0
 
 STATUS_VALID = "valid"
 STATUS_FLAGGED = "flagged"
 STATUS_CHEATING = "cheating"
+
+ACTIVITY_WALKING = "walking"
+ACTIVITY_CYCLING = "cycling"
 
 
 def _mean(values: Sequence[float]) -> float:
@@ -112,7 +118,7 @@ def detect_teleport(
     points: Sequence[Dict[str, Any]],
     jump_threshold_m: float = TELEPORT_JUMP_THRESHOLD_M,
     dt_threshold_s: float = TELEPORT_DT_THRESHOLD_S,
- ) -> List[Dict[str, Any]]:
+) -> List[Dict[str, Any]]:
     """Find suspicious jumps in very short time windows."""
     flagged: List[Dict[str, Any]] = []
     for i in range(1, len(points)):
@@ -136,8 +142,25 @@ def detect_teleport(
     return flagged
 
 
-def deterministic_validate(points: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+def _speed_bucket(activity_type: str, avg_speed_kmph: float) -> str:
+    if activity_type == ACTIVITY_CYCLING:
+        if avg_speed_kmph > CYCLE_VEHICLE_SPEED_KMPH_MIN:
+            return "likely_vehicle"
+        if CYCLE_MIN_EXPECTED_KMPH <= avg_speed_kmph <= CYCLE_MAX_EXPECTED_KMPH:
+            return "likely_cycle"
+        return "ambiguous_speed"
+
+    if avg_speed_kmph < WALK_AVG_SPEED_KMPH_MAX:
+        return "likely_walk"
+    if avg_speed_kmph > WALK_VEHICLE_SPEED_KMPH_MIN:
+        return "likely_vehicle"
+    return "ambiguous_speed"
+
+
+def deterministic_validate(points: Sequence[Dict[str, Any]], activity_type: str = ACTIVITY_WALKING) -> Dict[str, Any]:
     """Run deterministic, explainable anti-cheat rules."""
+    mode = activity_type if activity_type in (ACTIVITY_WALKING, ACTIVITY_CYCLING) else ACTIVITY_WALKING
+
     if len(points) < MIN_POINTS:
         return {
             "status": STATUS_FLAGGED,
@@ -178,11 +201,7 @@ def deterministic_validate(points: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         reasons.append("impossible_speed")
 
     avg_speed_kmph = float(features["avg_speed_mps"] or 0.0) * 3.6
-    speed_bucket = "ambiguous_speed"
-    if avg_speed_kmph < WALK_AVG_SPEED_KMPH_MAX:
-        speed_bucket = "likely_walk"
-    elif avg_speed_kmph > VEHICLE_AVG_SPEED_KMPH_MIN:
-        speed_bucket = "likely_vehicle"
+    speed_bucket = _speed_bucket(mode, avg_speed_kmph)
     reasons.append(speed_bucket)
 
     gps_accuracy_values = [
@@ -196,7 +215,7 @@ def deterministic_validate(points: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         reasons.append("low_gps_accuracy")
 
     status = STATUS_VALID
-    confidence = 0.92
+    confidence = 0.90 if mode == ACTIVITY_CYCLING else 0.92
 
     if has_teleport or has_impossible_speed:
         status = STATUS_CHEATING
@@ -212,7 +231,7 @@ def deterministic_validate(points: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
         confidence -= 0.15
 
     if flagged_segments:
-        logger.warning("validation_flagged_segments status=%s segments=%s", status, flagged_segments)
+        logger.warning("validation_flagged_segments mode=%s status=%s segments=%s", mode, status, flagged_segments)
 
     return {
         "status": status,
