@@ -102,13 +102,25 @@ export function RunScreen() {
     }
     const territoryPoints = allTerritories.flatMap((t) => t.coordinates);
     if (territoryPoints.length < 2) {
+      if (!currentLocation) {
+        return;
+      }
+      mapRef.current.animateToRegion(
+        {
+          latitude: currentLocation.latitude,
+          longitude: currentLocation.longitude,
+          latitudeDelta: 0.008,
+          longitudeDelta: 0.008,
+        },
+        500
+      );
       return;
     }
     mapRef.current.fitToCoordinates(territoryPoints, {
       edgePadding: { top: 80, right: 40, bottom: 120, left: 40 },
       animated: true,
     });
-  }, [allTerritories, isRunning, routeCoordinates.length]);
+  }, [allTerritories, currentLocation, isRunning, routeCoordinates.length]);
   const { fogEnabled, exploredCount, loading: fogLoading } = useFogOfWar(
     user?.uid ?? null,
     mapRegion
@@ -858,7 +870,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
-
 
 
 

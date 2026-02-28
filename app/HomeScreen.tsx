@@ -160,6 +160,7 @@ export function HomeScreen() {
   const navigation = useNavigation<any>();
   const mapRef = useRef<MapView | null>(null);
   const userInteractedRef = useRef(false);
+  const lastAutoZoomSignatureRef = useRef<string>("");
 
   const [summary, setSummary] = React.useState<DashboardSummary | null>(null);
   const [loadingSummary, setLoadingSummary] = React.useState(false);
@@ -366,6 +367,13 @@ export function HomeScreen() {
     others.sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0));
     return [...own, ...others];
   }, [visibleTerritories, user]);
+  const autoZoomSignature = React.useMemo(() => {
+    const territoryPointCount = visibleTerritories.reduce((acc, shape) => acc + shape.coordinates.length, 0);
+    const locationSig = currentLocation
+      ? `${currentLocation.latitude.toFixed(3)}:${currentLocation.longitude.toFixed(3)}`
+      : "none";
+    return `${visibleTerritories.length}:${territoryPointCount}:${locationSig}`;
+  }, [visibleTerritories, currentLocation]);
   const { fogEnabled, exploredCount, loading: fogLoading } = useFogOfWar(
     user?.uid ?? null,
     mapRegion
@@ -415,6 +423,12 @@ export function HomeScreen() {
     if (mapLayout.width <= 0 || mapLayout.height <= 0) {
       return;
     }
+    if (userInteractedRef.current) {
+      return;
+    }
+    if (lastAutoZoomSignatureRef.current === autoZoomSignature) {
+      return;
+    }
     const territoryPoints = visibleTerritories.flatMap((shape) => shape.coordinates) as MapCoordinate[];
     const fitPoints = currentLocation ? [currentLocation, ...territoryPoints] : territoryPoints;
 
@@ -423,6 +437,7 @@ export function HomeScreen() {
         edgePadding: { top: 34, right: 22, bottom: 34, left: 22 },
         animated: true,
       });
+      lastAutoZoomSignatureRef.current = autoZoomSignature;
       return;
     }
     if (!currentLocation) {
@@ -436,7 +451,8 @@ export function HomeScreen() {
     };
     setMapRegion(nextRegion);
     mapRef.current.animateToRegion(nextRegion, 650);
-  }, [visibleTerritories, currentLocation, mapLayout.width, mapLayout.height]);
+    lastAutoZoomSignatureRef.current = autoZoomSignature;
+  }, [autoZoomSignature, visibleTerritories, currentLocation, mapLayout.width, mapLayout.height]);
 
   useEffect(() => {
     if (!currentLocation || territory) {
@@ -557,6 +573,8 @@ export function HomeScreen() {
                     userInteractedRef.current = true;
                   }
                 }}
+                showsUserLocation
+                showsMyLocationButton
                 onUserLocationChange={(event) => {
                   const nextLocation = event.nativeEvent.coordinate;
                   if (!nextLocation) {
@@ -1098,4 +1116,3 @@ const predStyles = StyleSheet.create({
     letterSpacing: 1,
   },
 });
-

@@ -104,6 +104,7 @@ export function MapPopScreen() {
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView | null>(null);
   const userInteractedRef = useRef(false);
+  const lastAutoZoomSignatureRef = useRef<string>("");
 
   const [territories, setTerritories] = useState<TerritoryState[]>([]);
   const [layout, setLayout] = useState({ width: 0, height: 0 });
@@ -156,6 +157,13 @@ export function MapPopScreen() {
     others.sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0));
     return [...own, ...others];
   }, [visibleTerritories, user]);
+  const autoZoomSignature = useMemo(() => {
+    const territoryPointCount = visibleTerritories.reduce((acc, shape) => acc + shape.coordinates.length, 0);
+    const locationSig = currentLocation
+      ? `${currentLocation.latitude.toFixed(3)}:${currentLocation.longitude.toFixed(3)}`
+      : "none";
+    return `${visibleTerritories.length}:${territoryPointCount}:${locationSig}`;
+  }, [visibleTerritories, currentLocation]);
 
   const computedRegion = useMemo(() => getRegionFromTerritories(visibleTerritories) ?? FALLBACK_REGION, [visibleTerritories]);
 
@@ -164,6 +172,12 @@ export function MapPopScreen() {
       return;
     }
     if (layout.width <= 0 || layout.height <= 0) {
+      return;
+    }
+    if (userInteractedRef.current) {
+      return;
+    }
+    if (lastAutoZoomSignatureRef.current === autoZoomSignature) {
       return;
     }
     const territoryPoints = visibleTerritories.flatMap((t) => t.coordinates);
@@ -181,13 +195,15 @@ export function MapPopScreen() {
         },
         650
       );
+      lastAutoZoomSignatureRef.current = autoZoomSignature;
       return;
     }
     mapRef.current.fitToCoordinates(fitPoints, {
       edgePadding: { top: 110, right: 24, bottom: 150, left: 24 },
       animated: true,
     });
-  }, [visibleTerritories, currentLocation, layout.width, layout.height]);
+    lastAutoZoomSignatureRef.current = autoZoomSignature;
+  }, [autoZoomSignature, visibleTerritories, currentLocation, layout.width, layout.height]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
