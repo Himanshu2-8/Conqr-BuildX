@@ -5,7 +5,7 @@ import type { Region } from "react-native-maps";
 // @ts-ignore react-native-svg is provided at runtime in Expo, even if local types are absent
 const SvgModule = require("react-native-svg");
 const Svg = SvgModule.default ?? SvgModule;
-const { Circle, Defs, Ellipse, Mask, RadialGradient, Rect, Stop } = SvgModule;
+const { Circle, Defs, Ellipse, Mask, Polygon: SvgPolygon, RadialGradient, Rect, Stop } = SvgModule;
 
 type MapCoordinate = {
   latitude: number;
@@ -17,6 +17,7 @@ type FogOverlayProps = {
   height: number;
   region: Region;
   revealPoints: MapCoordinate[];
+  revealPolygons?: MapCoordinate[][];
 };
 
 function toScreenPoint(point: MapCoordinate, region: Region, width: number, height: number) {
@@ -25,6 +26,15 @@ function toScreenPoint(point: MapCoordinate, region: Region, width: number, heig
   const x = ((point.longitude - left) / region.longitudeDelta) * width;
   const y = ((top - point.latitude) / region.latitudeDelta) * height;
   return { x, y };
+}
+
+function toScreenPolygon(points: MapCoordinate[], region: Region, width: number, height: number) {
+  return points
+    .map((point) => {
+      const screenPoint = toScreenPoint(point, region, width, height);
+      return `${screenPoint.x},${screenPoint.y}`;
+    })
+    .join(" ");
 }
 
 function buildClouds(width: number, height: number) {
@@ -38,7 +48,7 @@ function buildClouds(width: number, height: number) {
   ];
 }
 
-export function FogOverlay({ width, height, region, revealPoints }: FogOverlayProps) {
+export function FogOverlay({ width, height, region, revealPoints, revealPolygons = [] }: FogOverlayProps) {
   if (width <= 0 || height <= 0) {
     return null;
   }
@@ -63,6 +73,15 @@ export function FogOverlay({ width, height, region, revealPoints }: FogOverlayPr
           </RadialGradient>
           <Mask id="fogMask">
             <Rect x="0" y="0" width={width} height={height} fill="white" />
+            {revealPolygons
+              .filter((polygon) => polygon.length >= 3)
+              .map((polygon, index) => (
+                <SvgPolygon
+                  key={`poly-${index}`}
+                  points={toScreenPolygon(polygon, region, width, height)}
+                  fill="black"
+                />
+              ))}
             {revealPoints.map((point, index) => {
               const { x, y } = toScreenPoint(point, region, width, height);
               return (

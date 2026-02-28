@@ -63,16 +63,9 @@ export function RunScreen() {
     () => points.map((point) => ({ latitude: point.latitude, longitude: point.longitude })),
     [points]
   );
-  const territoryRevealPoints = useMemo(
-    () => allTerritories.flatMap((shape) => shape.coordinates).slice(0, 48),
-    [allTerritories]
-  );
   const extraRevealPoints = useMemo(
-    () =>
-      currentLocation
-        ? [currentLocation, ...routeCoordinates, ...territoryRevealPoints]
-        : [...routeCoordinates, ...territoryRevealPoints],
-    [currentLocation, routeCoordinates, territoryRevealPoints]
+    () => (currentLocation ? [currentLocation, ...routeCoordinates] : routeCoordinates),
+    [currentLocation, routeCoordinates]
   );
   const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
     user?.uid ?? null,
@@ -279,7 +272,13 @@ export function RunScreen() {
               ) : null}
             </MapView>
             {fogEnabled ? (
-              <FogOverlay width={mapLayout.width} height={mapLayout.height} region={mapRegion} revealPoints={revealPoints} />
+              <FogOverlay
+                width={mapLayout.width}
+                height={mapLayout.height}
+                region={mapRegion}
+                revealPoints={revealPoints}
+                revealPolygons={allTerritories.map((shape) => shape.coordinates)}
+              />
             ) : null}
           </View>
           <Text style={styles.mapCaption}>
