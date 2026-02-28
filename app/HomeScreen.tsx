@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
-import MapView, { Polygon, type Region } from "react-native-maps";
+import MapView, { Marker, Polygon, type Region } from "react-native-maps";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -11,7 +11,7 @@ import { useAuth } from "./context/AuthContext";
 import { useEntranceAnim } from "./hooks/useEntranceAnim";
 import { useFogOfWar } from "./hooks/useFogOfWar";
 import { fetchDashboardSummary, type DashboardSummary } from "./services/dashboard";
-import { subscribeAllTerritories, type TerritoryState } from "./services/territory";
+import { subscribeAllTerritories, fetchUsernamesForUserIds, type TerritoryState } from "./services/territory";
 import { subscribeLeaderboard, type LeaderboardRow } from "./services/leaderboard";
 import { fetchMissionsSummary, type QuestProgress } from "./services/missions";
 import { LiveBadge } from "./ui/LiveBadge";
@@ -138,6 +138,16 @@ function isTerritoryNearby(territory: TerritoryState, location: MapCoordinate, r
   return false;
 }
 
+function getTerritoryCentroid(coords: MapCoordinate[]): MapCoordinate {
+  let latSum = 0;
+  let lngSum = 0;
+  for (const c of coords) {
+    latSum += c.latitude;
+    lngSum += c.longitude;
+  }
+  return { latitude: latSum / coords.length, longitude: lngSum / coords.length };
+}
+
 export function HomeScreen() {
   const { user, signOut } = useAuth();
   const navigation = useNavigation<any>();
@@ -152,6 +162,7 @@ export function HomeScreen() {
   const [territory, setTerritory] = React.useState<TerritoryState | null>(null);
   const [allTerritories, setAllTerritories] = React.useState<TerritoryState[]>([]);
   const [territoryError, setTerritoryError] = React.useState<string | null>(null);
+  const [usernameMap, setUsernameMap] = React.useState<Map<string, string>>(new Map());
 
   const [leaderboard, setLeaderboard] = React.useState<LeaderboardRow[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = React.useState(false);
@@ -235,6 +246,19 @@ export function HomeScreen() {
     return unsubscribe;
   }, [user]);
 
+  // Fetch usernames for all territory owners so map labels work even for old docs.
+  useEffect(() => {
+    const ids = allTerritories
+      .map((t) => t.userId)
+      .filter((id): id is string => !!id);
+    if (ids.length === 0) return;
+    let active = true;
+    fetchUsernamesForUserIds(ids).then((map) => {
+      if (active) setUsernameMap(map);
+    });
+    return () => { active = false; };
+  }, [allTerritories]);
+
   useEffect(() => {
     setLeaderboardLoading(true);
     setLeaderboardError(null);
@@ -298,6 +322,24 @@ export function HomeScreen() {
     const nearby = allTerritories.filter((shape) => isTerritoryNearby(shape, currentLocation, NEARBY_TERRITORY_RADIUS_M));
     return nearby.length > 0 ? nearby : [];
   }, [allTerritories, currentLocation]);
+
+  // Sort territories so the current user's polygon is drawn first (bottom layer)
+  // and other users' territories are drawn on top, sorted by updatedAt ascending.
+  // This way, where another user has walked over the current user's territory,
+  // the overlapping area visually shows the conquering user's color.
+  const sortedTerritories = React.useMemo(() => {
+    const own: TerritoryState[] = [];
+    const others: TerritoryState[] = [];
+    for (const shape of visibleTerritories) {
+      if (user && shape.userId === user.uid) {
+        own.push(shape);
+      } else {
+        others.push(shape);
+      }
+    }
+    others.sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0));
+    return [...own, ...others];
+  }, [visibleTerritories, user]);
   const { fogEnabled, exploredCount, loading: fogLoading } = useFogOfWar(
     user?.uid ?? null,
     mapRegion
@@ -489,8 +531,6 @@ export function HomeScreen() {
                     userInteractedRef.current = true;
                   }
                 }}
-                showsUserLocation
-                showsMyLocationButton
                 onUserLocationChange={(event) => {
                   const nextLocation = event.nativeEvent.coordinate;
                   if (!nextLocation) {
@@ -502,7 +542,7 @@ export function HomeScreen() {
                   });
                 }}
               >
-                {visibleTerritories.map((shape, index) => {
+                {sortedTerritories.map((shape, index) => {
                   const isOwn = !!user && shape.userId === user.uid;
                   const colors = getColorForUser(shape.userId, isOwn);
                   return (
@@ -513,6 +553,38 @@ export function HomeScreen() {
                       strokeColor={colors.stroke}
                       strokeWidth={isOwn ? 2 : 1}
                     />
+                  );
+                })}
+                {sortedTerritories.map((shape, index) => {
+                  const isOwn2 = !!user && shape.userId === user.uid;
+                  const label = isOwn2
+                    ? "You"
+                    : shape.username
+                      || (shape.userId ? usernameMap.get(shape.userId) : null)
+                      || null;
+                  if (!label || shape.coordinates.length < 3) return null;
+                  const colors = getColorForUser(shape.userId, isOwn2);
+                  const center = getTerritoryCentroid(shape.coordinates);
+                  return (
+                    <Marker
+                      key={`label-${shape.userId ?? "unknown"}-${index}`}
+                      coordinate={center}
+                      anchor={{ x: 0.5, y: 0.5 }}
+                      tracksViewChanges={false}
+                    >
+                      <View style={{
+                        backgroundColor: "rgba(0,0,0,0.65)",
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
+                        borderRadius: 6,
+                        borderWidth: 1.5,
+                        borderColor: colors.stroke,
+                      }}>
+                        <Text style={{ color: "#fff", fontSize: 9, fontWeight: "800" }}>
+                          {label}
+                        </Text>
+                      </View>
+                    </Marker>
                   );
                 })}
               </MapView>
@@ -608,24 +680,27 @@ export function HomeScreen() {
             {homeLeaderboardRows.map((row) => {
               const isMe = row.userId === user?.uid;
               const badge = getRankBadge(row.rank);
+              const userColor = isMe
+                ? { fill: "rgba(220,38,38,0.30)", stroke: "#DC2626" }
+                : getColorForUser(row.userId, false);
               return (
-                <View key={row.userId} style={[styles.lbRow, isMe && styles.lbRowMe]}>
+                <View key={row.userId} style={[styles.lbRow, { borderColor: userColor.stroke, borderWidth: 1 }]}>
                   <View style={styles.lbRankWrap}>
                     <MaterialCommunityIcons name={badge.icon as any} size={16} color={badge.color} />
                   </View>
 
-                  <View style={[styles.lbAvatar, isMe && styles.lbAvatarMe]}>
+                  <View style={[styles.lbAvatar, { backgroundColor: userColor.stroke }]}>
                     <Text style={styles.lbAvatarText}>{getInitials(row.username)}</Text>
                   </View>
 
                   <View style={styles.lbMain}>
-                    <Text style={[styles.lbName, isMe && styles.lbNameMe]} numberOfLines={1}>
+                    <Text style={[styles.lbName, { color: userColor.stroke }]} numberOfLines={1}>
                       {row.username}
                     </Text>
                   </View>
 
                   <View style={styles.lbValueWrap}>
-                    <Text style={[styles.lbValue, isMe && styles.lbValueMe]}>{(row.value / 1000).toFixed(1)}</Text>
+                    <Text style={[styles.lbValue, { color: userColor.stroke }]}>{(row.value / 1000).toFixed(1)}</Text>
                     <Text style={styles.lbUnit}>km</Text>
                   </View>
                 </View>

@@ -3,8 +3,8 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 // @ts-ignore react-native-maps types are resolved at runtime in this Expo app
-import MapView, { Polygon, type Region } from "react-native-maps";
-import { subscribeAllTerritories, type TerritoryState } from "./services/territory";
+import MapView, { Marker, Polygon, type Region } from "react-native-maps";
+import { subscribeAllTerritories, fetchUsernamesForUserIds, type TerritoryState } from "./services/territory";
 import { useAuth } from "./context/AuthContext";
 
 const FALLBACK_REGION: Region = {
@@ -70,6 +70,34 @@ function isTerritoryNearby(territory: TerritoryState, location: MapCoordinate, r
   return false;
 }
 
+function getTerritoryCentroid(coords: MapCoordinate[]): MapCoordinate {
+  let latSum = 0;
+  let lngSum = 0;
+  for (const c of coords) {
+    latSum += c.latitude;
+    lngSum += c.longitude;
+  }
+  return { latitude: latSum / coords.length, longitude: lngSum / coords.length };
+}
+
+function getColorForUser(userId: string | undefined, isOwn: boolean) {
+  if (isOwn) {
+    return { fill: "rgba(220,38,38,0.30)", stroke: "#DC2626" };
+  }
+  if (!userId) {
+    return { fill: "rgba(14,165,233,0.30)", stroke: "#0284C7" };
+  }
+  const palette = [
+    { fill: "rgba(234,179,8,0.30)", stroke: "#CA8A04" },
+    { fill: "rgba(16,185,129,0.30)", stroke: "#059669" },
+    { fill: "rgba(59,130,246,0.30)", stroke: "#2563EB" },
+    { fill: "rgba(168,85,247,0.30)", stroke: "#9333EA" },
+    { fill: "rgba(249,115,22,0.30)", stroke: "#EA580C" },
+  ];
+  const hash = userId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return palette[hash % palette.length];
+}
+
 export function MapPopScreen() {
   const { user } = useAuth();
   const navigation = useNavigation<any>();
@@ -80,6 +108,7 @@ export function MapPopScreen() {
   const [territories, setTerritories] = useState<TerritoryState[]>([]);
   const [layout, setLayout] = useState({ width: 0, height: 0 });
   const [currentLocation, setCurrentLocation] = useState<MapCoordinate | null>(null);
+  const [usernameMap, setUsernameMap] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     const unsub = subscribeAllTerritories(
@@ -91,6 +120,19 @@ export function MapPopScreen() {
     return unsub;
   }, []);
 
+  // Fetch usernames for all territory owners so map labels always show.
+  useEffect(() => {
+    const ids = territories
+      .map((t) => t.userId)
+      .filter((id): id is string => !!id);
+    if (ids.length === 0) return;
+    let active = true;
+    fetchUsernamesForUserIds(ids).then((map) => {
+      if (active) setUsernameMap(map);
+    });
+    return () => { active = false; };
+  }, [territories]);
+
   const visibleTerritories = useMemo(() => {
     if (!currentLocation) {
       return territories;
@@ -98,6 +140,22 @@ export function MapPopScreen() {
     const nearby = territories.filter((shape) => isTerritoryNearby(shape, currentLocation, NEARBY_TERRITORY_RADIUS_M));
     return nearby.length > 0 ? nearby : [];
   }, [territories, currentLocation]);
+
+  // Sort: current user's territory at the bottom, others on top sorted by updatedAt.
+  // Overlapping areas from other users will visually "conquer" the current user's territory.
+  const sortedTerritories = useMemo(() => {
+    const own: TerritoryState[] = [];
+    const others: TerritoryState[] = [];
+    for (const shape of visibleTerritories) {
+      if (user && shape.userId === user.uid) {
+        own.push(shape);
+      } else {
+        others.push(shape);
+      }
+    }
+    others.sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0));
+    return [...own, ...others];
+  }, [visibleTerritories, user]);
 
   const computedRegion = useMemo(() => getRegionFromTerritories(visibleTerritories) ?? FALLBACK_REGION, [visibleTerritories]);
 
@@ -159,16 +217,49 @@ export function MapPopScreen() {
           });
         }}
       >
-        {visibleTerritories.map((shape, index) => {
+        {sortedTerritories.map((shape, index) => {
           const isOwn = !!user && shape.userId === user.uid;
+          const colors = getColorForUser(shape.userId, isOwn);
           return (
             <Polygon
               key={`${shape.userId ?? "unknown"}-${index}`}
               coordinates={shape.coordinates}
-              fillColor={isOwn ? "rgba(220,38,38,0.26)" : "rgba(156,163,175,0.18)"}
-              strokeColor={isOwn ? "#DC2626" : "#9CA3AF"}
+              fillColor={colors.fill}
+              strokeColor={colors.stroke}
               strokeWidth={isOwn ? 3 : 2}
             />
+          );
+        })}
+        {sortedTerritories.map((shape, index) => {
+          const isOwn2 = !!user && shape.userId === user.uid;
+          const label = isOwn2
+            ? "You"
+            : shape.username
+              || (shape.userId ? usernameMap.get(shape.userId) : null)
+              || null;
+          if (!label || shape.coordinates.length < 3) return null;
+          const colors = getColorForUser(shape.userId, isOwn2);
+          const center = getTerritoryCentroid(shape.coordinates);
+          return (
+            <Marker
+              key={`label-${shape.userId ?? "unknown"}-${index}`}
+              coordinate={center}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+            >
+              <View style={{
+                backgroundColor: "rgba(0,0,0,0.65)",
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                borderRadius: 8,
+                borderWidth: 2,
+                borderColor: colors.stroke,
+              }}>
+                <Text style={{ color: "#fff", fontSize: 11, fontWeight: "800" }}>
+                  {label}
+                </Text>
+              </View>
+            </Marker>
           );
         })}
       </MapView>

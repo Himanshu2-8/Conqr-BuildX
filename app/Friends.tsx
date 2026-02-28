@@ -9,6 +9,11 @@ import { useAuth } from "./context/AuthContext";
 import { db } from "./lib/firebase";
 import { LiveBadge } from "./ui/LiveBadge";
 import {
+  addFriendByUsername,
+  subscribeFriends,
+  type FriendRow,
+} from "./services/friends";
+import {
   buildFriendChallengeShareMessage,
   createFriendChallenge,
   formatChallengeTimeRemaining,
@@ -70,6 +75,11 @@ function buildStandings(challenge: FriendChallenge, distanceByUserId: Record<str
 
 export function FriendsScreen() {
   const { user } = useAuth();
+  const [usernameInput, setUsernameInput] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [friends, setFriends] = useState<FriendRow[]>([]);
+  const [friendsError, setFriendsError] = useState<string | null>(null);
+
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [inviteCodeInput, setInviteCodeInput] = useState("");
   const [creating, setCreating] = useState(false);
@@ -84,6 +94,20 @@ export function FriendsScreen() {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setFriends([]);
+      return;
+    }
+    setFriendsError(null);
+    const unsubscribe = subscribeFriends(
+      user.uid,
+      (rows) => setFriends(rows),
+      (error) => setFriendsError(error.message || "Failed to load friends")
+    );
+    return unsubscribe;
+  }, [user]);
 
   useEffect(() => {
     if (!user) {
@@ -105,7 +129,6 @@ export function FriendsScreen() {
         setLoadingChallenges(false);
       }
     );
-
     return unsubscribe;
   }, [user]);
 
@@ -118,12 +141,35 @@ export function FriendsScreen() {
       });
       setDistanceByUserId(next);
     });
-
     return unsubscribe;
   }, []);
 
   const myDistanceM = user ? distanceByUserId[user.uid] ?? 0 : 0;
   const displayName = user?.displayName?.trim() || user?.email?.split("@")[0] || "Runner";
+
+  const onAddFriend = async () => {
+    if (!user) {
+      Alert.alert("Friends", "Please sign in again.");
+      return;
+    }
+    const clean = usernameInput.trim();
+    if (!clean) {
+      Alert.alert("Friends", "Enter a username.");
+      return;
+    }
+
+    setAdding(true);
+    try {
+      await addFriendByUsername(user.uid, clean);
+      setUsernameInput("");
+      Alert.alert("Friend Added", `${clean} has been added.`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Could not add friend";
+      Alert.alert("Add friend failed", message);
+    } finally {
+      setAdding(false);
+    }
+  };
 
   const onCreateChallenge = async () => {
     if (!user) {
@@ -140,7 +186,7 @@ export function FriendsScreen() {
         baselineDistanceM: myDistanceM,
       });
       await Share.share({ message: buildFriendChallengeShareMessage(challenge) });
-      Alert.alert("Challenge ready", `Code ${challenge.inviteCode} created and ready to share.`);
+      Alert.alert("Room ready", `Code ${challenge.inviteCode} created. Friends can join before you start.`);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Failed to create challenge";
       Alert.alert("Create failed", message);
@@ -164,7 +210,7 @@ export function FriendsScreen() {
         baselineDistanceM: myDistanceM,
       });
       setInviteCodeInput("");
-      Alert.alert("Joined", "You joined the friend challenge.");
+      Alert.alert("Joined", "You joined the room.");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Failed to join challenge";
       Alert.alert("Join failed", message);
@@ -200,16 +246,58 @@ export function FriendsScreen() {
         <View style={styles.header}>
           <Text style={styles.title}>Friends</Text>
           <Text style={styles.subtitle}>
-            Create a room, invite up to 4 friends, then the host starts the timer. Distance gained during the match decides the winner.
+            Add friends by username, then create a room, invite up to 4 friends, and start a timed distance battle when everyone is ready.
           </Text>
         </View>
+
+        <GradientCard>
+          <Text style={styles.sectionTitle}>Add Friend</Text>
+          <TextInput
+            value={usernameInput}
+            onChangeText={setUsernameInput}
+            style={styles.input}
+            placeholder="Enter username"
+            placeholderTextColor="#9CA3AF"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Pressable
+            style={({ pressed }) => [styles.addButton, pressed && styles.pressed, adding && styles.disabled]}
+            onPress={onAddFriend}
+            disabled={adding}
+          >
+            <Text style={styles.addButtonText}>{adding ? "Adding..." : "Add by Username"}</Text>
+          </Pressable>
+          {friendsError ? <Text style={styles.error}>{friendsError}</Text> : null}
+        </GradientCard>
+
+        <GradientCard>
+          <Text style={styles.sectionTitle}>Your Friends</Text>
+          {friends.length === 0 ? <Text style={styles.hint}>No friends yet. Add your first friend above.</Text> : null}
+          <View style={styles.list}>
+            {friends.map((friend) => (
+              <View key={friend.uid} style={styles.friendRow}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{getInitials(friend.username)}</Text>
+                </View>
+                <View style={styles.rowMain}>
+                  <Text style={styles.username}>{friend.username}</Text>
+                  <Text style={styles.meta}>
+                    {friend.email || friend.uid.slice(0, 10)}
+                    {friend.addedAt ? ` | Added ${friend.addedAt.toLocaleDateString()}` : ""}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </GradientCard>
 
         <GradientCard>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}>
               <MaterialCommunityIcons name="account-multiple-plus-outline" size={18} color="#DC2626" />
             </View>
-            <Text style={styles.cardTitle}>Create Challenge</Text>
+            <Text style={styles.cardTitle}>Create Room</Text>
           </View>
 
           <Text style={styles.hint}>Your current total distance ({formatDistance(myDistanceM)}) becomes the start baseline.</Text>
@@ -236,7 +324,7 @@ export function FriendsScreen() {
           >
             <Text style={styles.primaryButtonText}>{creating ? "Creating..." : "Create Room & Share Invite"}</Text>
           </Pressable>
-          <Text style={styles.hint}>Friends join first. The host starts the game when everyone is ready.</Text>
+          <Text style={styles.hint}>Friends join first. The host starts the timer later.</Text>
         </GradientCard>
 
         <GradientCard>
@@ -262,7 +350,7 @@ export function FriendsScreen() {
             onPress={onJoinChallenge}
             disabled={joining}
           >
-            <Text style={styles.secondaryButtonText}>{joining ? "Joining..." : "Join Challenge"}</Text>
+            <Text style={styles.secondaryButtonText}>{joining ? "Joining..." : "Join Room"}</Text>
           </Pressable>
         </GradientCard>
 
@@ -271,11 +359,13 @@ export function FriendsScreen() {
             <View style={styles.iconBox}>
               <MaterialCommunityIcons name="sword-cross" size={18} color="#DC2626" />
             </View>
-            <Text style={styles.cardTitle}>Active Rooms</Text>
-            {!loadingChallenges && challenges.some((challenge) => challenge.status === "active" && now < challenge.endsAtMs) ? <LiveBadge /> : null}
+            <Text style={styles.cardTitle}>Challenge Rooms</Text>
+            {!loadingChallenges && challenges.some((challenge) => challenge.status === "active" && now < challenge.endsAtMs) ? (
+              <LiveBadge />
+            ) : null}
           </View>
 
-          {loadingChallenges ? <Text style={styles.hint}>Loading friend rooms...</Text> : null}
+          {loadingChallenges ? <Text style={styles.hint}>Loading rooms...</Text> : null}
           {challengeError ? <Text style={styles.error}>{challengeError}</Text> : null}
           {!loadingChallenges && !challengeError && challenges.length === 0 ? (
             <Text style={styles.hint}>No rooms yet. Create one and share the code with friends.</Text>
@@ -294,7 +384,7 @@ export function FriendsScreen() {
                     <View style={styles.challengeMeta}>
                       <Text style={styles.challengeCode}>Code {challenge.inviteCode}</Text>
                       <Text style={styles.challengeHint}>
-                        {finished ? "Finished" : formatChallengeTimeRemaining(challenge)} • {challenge.participants.length - 1}/4 friends
+                        {finished ? "Finished" : formatChallengeTimeRemaining(challenge)} | {Math.max(challenge.participants.length - 1, 0)}/4 friends
                       </Text>
                     </View>
                     {isHost && challenge.status === "waiting" ? (
@@ -320,7 +410,7 @@ export function FriendsScreen() {
 
                   <View style={styles.standingsList}>
                     {standings.map((row, index) => (
-                      <View key={`${challenge.id}-${row.userId}`} style={[styles.row, index === 0 && styles.rowTop]}>
+                      <View key={`${challenge.id}-${row.userId}`} style={[styles.challengeRow, index === 0 && styles.rowTop]}>
                         <View style={[styles.avatar, index === 0 && styles.avatarTop]}>
                           <Text style={styles.avatarText}>{getInitials(row.username)}</Text>
                         </View>
@@ -328,14 +418,10 @@ export function FriendsScreen() {
                           <Text style={styles.username} numberOfLines={1}>
                             {row.username}
                           </Text>
-                          <Text style={styles.userHint}>
-                            Total {formatDistance(row.currentDistanceM)}
-                          </Text>
+                          <Text style={styles.userHint}>Total {formatDistance(row.currentDistanceM)}</Text>
                         </View>
                         <View style={styles.valueWrap}>
-                          <Text style={[styles.value, index === 0 && styles.valueTop]}>
-                            +{formatDistance(row.gainedDistanceM)}
-                          </Text>
+                          <Text style={[styles.value, index === 0 && styles.valueTop]}>+{formatDistance(row.gainedDistanceM)}</Text>
                           <Text style={styles.valueUnit}>distance</Text>
                         </View>
                       </View>
@@ -364,6 +450,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(127, 29, 29, 0.30)",
     gap: 12,
   },
+  sectionTitle: { color: "#fff", fontSize: 18, fontWeight: "800" },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   iconBox: {
     width: 36,
@@ -374,8 +461,51 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   cardTitle: { color: "#fff", fontSize: 18, fontWeight: "800", flex: 1 },
+  input: {
+    color: "#fff",
+    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(220,38,38,0.35)",
+    backgroundColor: "rgba(0,0,0,0.45)",
+  },
+  addButton: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+    backgroundColor: "#DC2626",
+    borderWidth: 1,
+    borderColor: "rgba(220,38,38,0.60)",
+  },
+  addButtonText: { color: "#fff", fontSize: 14, fontWeight: "900" },
   hint: { color: "#9CA3AF", fontSize: 12 },
   error: { color: "#FB7185", fontSize: 12 },
+  list: { gap: 8 },
+  friendRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  rowMain: { flex: 1, minWidth: 0, gap: 2 },
+  username: { color: "#fff", fontSize: 14, fontWeight: "800" },
+  meta: { color: "#9CA3AF", fontSize: 11 },
+  avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#374151",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarTop: { backgroundColor: "#DC2626" },
+  avatarText: { color: "#fff", fontSize: 12, fontWeight: "800" },
   optionRow: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
   optionBtn: {
     minWidth: 64,
@@ -393,16 +523,6 @@ const styles = StyleSheet.create({
   },
   optionText: { color: "#E5E7EB", fontWeight: "800" },
   optionTextActive: { color: "#FCA5A5" },
-  input: {
-    color: "#fff",
-    fontSize: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(220,38,38,0.35)",
-    backgroundColor: "rgba(0,0,0,0.45)",
-  },
   primaryButton: {
     borderRadius: 14,
     paddingVertical: 14,
@@ -467,7 +587,7 @@ const styles = StyleSheet.create({
   },
   winnerText: { color: "#FDE68A", fontSize: 12, fontWeight: "800", flex: 1 },
   standingsList: { gap: 8 },
-  row: {
+  challengeRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
@@ -480,18 +600,6 @@ const styles = StyleSheet.create({
     borderColor: "rgba(220, 38, 38, 0.45)",
     backgroundColor: "rgba(220,38,38,0.10)",
   },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#374151",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarTop: { backgroundColor: "#DC2626" },
-  avatarText: { color: "#fff", fontSize: 11, fontWeight: "800" },
-  rowMain: { flex: 1, minWidth: 0, gap: 2 },
-  username: { color: "#fff", fontSize: 13, fontWeight: "800" },
   userHint: { color: "#9CA3AF", fontSize: 11 },
   valueWrap: { alignItems: "flex-end" },
   value: { color: "#E5E7EB", fontSize: 13, fontWeight: "900" },
