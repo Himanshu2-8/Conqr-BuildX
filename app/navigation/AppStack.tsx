@@ -18,6 +18,8 @@ export function AppStack() {
         headerTitleAlign: "left",
         headerShadowVisible: false,
         contentStyle: { backgroundColor: "#000000" },
+        animation: "fade_from_bottom",
+        animationDuration: 260,
       }}
     >
       <Stack.Screen name="Home" component={HomeScreen} options={{ title: "Dashboard", headerShown: false }} />

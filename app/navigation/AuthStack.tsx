@@ -15,6 +15,8 @@ export function AuthStack() {
         headerTitleAlign: "center",
         headerShadowVisible: false,
         contentStyle: { backgroundColor: "#000000" },
+        animation: "slide_from_right",
+        animationDuration: 260,
       }}
     >
       <Stack.Screen name="Login" component={LoginScreen} options={{ title: "Welcome" }} />

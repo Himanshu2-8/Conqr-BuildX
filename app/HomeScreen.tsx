@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import MapView, { Polygon, type Region } from "react-native-maps";
@@ -7,9 +7,11 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { useAuth } from "./context/AuthContext";
+import { useEntranceAnim } from "./hooks/useEntranceAnim";
 import { fetchDashboardSummary, type DashboardSummary } from "./services/dashboard";
 import { subscribeAllTerritories, type TerritoryState } from "./services/territory";
 import { subscribeLeaderboard, type LeaderboardRow } from "./services/leaderboard";
+import { fetchMissionsSummary, type QuestProgress } from "./services/missions";
 
 const FALLBACK_REGION: Region = {
   latitude: 20.5937,
@@ -116,6 +118,9 @@ export function HomeScreen() {
   const [leaderboard, setLeaderboard] = React.useState<LeaderboardRow[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = React.useState(false);
   const [leaderboardError, setLeaderboardError] = React.useState<string | null>(null);
+  const [missions, setMissions] = React.useState<QuestProgress[]>([]);
+  const [missionsLoading, setMissionsLoading] = React.useState(false);
+  const [missionsError, setMissionsError] = React.useState<string | null>(null);
   const [territoryUpdatedAt, setTerritoryUpdatedAt] = React.useState<Date | null>(null);
   const [leaderboardUpdatedAt, setLeaderboardUpdatedAt] = React.useState<Date | null>(null);
 
@@ -187,6 +192,40 @@ export function HomeScreen() {
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    if (!user) {
+      setMissions([]);
+      return;
+    }
+
+    let active = true;
+    setMissionsLoading(true);
+    setMissionsError(null);
+    fetchMissionsSummary(user.uid)
+      .then((summary) => {
+        if (!active) {
+          return;
+        }
+        setMissions(summary.quests);
+      })
+      .catch((err: unknown) => {
+        if (!active) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : "Failed to load missions";
+        setMissionsError(message);
+      })
+      .finally(() => {
+        if (active) {
+          setMissionsLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
   const name = user?.displayName || "Runner";
   const allRegion = getRegionFromTerritories(allTerritories);
   const territoryRegion = allRegion ?? (territory?.coordinates ? getRegionFromPolygon(territory.coordinates) : FALLBACK_REGION);
@@ -213,10 +252,11 @@ export function HomeScreen() {
   const leaderboardLiveText = leaderboardUpdatedAt
     ? `Last updated ${leaderboardUpdatedAt.toLocaleTimeString()}`
     : "Waiting for live rankings...";
+  const pageAnim = useEntranceAnim(60, 16);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.screen}>
+      <Animated.View style={[styles.screen, pageAnim]}>
       <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
         <Text style={styles.screenTitle}>Dashboard</Text>
         <View style={styles.headerWrap}>
@@ -335,6 +375,42 @@ export function HomeScreen() {
         <GradientCard>
           <View style={styles.cardHeader}>
             <View style={styles.iconBox}>
+              <MaterialCommunityIcons name="flag-checkered" size={18} color="#DC2626" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>Active Missions</Text>
+              <Text style={styles.hint}>Real-life goals for this week</Text>
+            </View>
+          </View>
+          {missionsLoading ? <Text style={styles.hint}>Loading missions...</Text> : null}
+          {missionsError ? <Text style={styles.error}>{missionsError}</Text> : null}
+          {!missionsLoading && !missionsError && missions.length === 0 ? (
+            <Text style={styles.hint}>No active missions yet.</Text>
+          ) : null}
+          <View style={styles.missionsList}>
+            {missions.map((mission) => {
+              const pct = mission.target > 0 ? Math.min((mission.progress / mission.target) * 100, 100) : 0;
+              return (
+                <View key={mission.id} style={styles.missionItem}>
+                  <View style={styles.missionHead}>
+                    <Text style={styles.missionTitle}>{mission.title}</Text>
+                    <Text style={[styles.missionStatus, mission.completed && styles.missionStatusDone]}>
+                      {mission.completed ? "Done" : `${Math.round(pct)}%`}
+                    </Text>
+                  </View>
+                  <Text style={styles.hint}>{mission.description}</Text>
+                  <View style={styles.track}>
+                    <View style={[styles.fill, { width: `${pct}%` }]} />
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </GradientCard>
+
+        <GradientCard>
+          <View style={styles.cardHeader}>
+            <View style={styles.iconBox}>
               <MaterialCommunityIcons name="trophy" size={18} color="#DC2626" />
             </View>
             <View style={{ flex: 1 }}>
@@ -394,7 +470,7 @@ export function HomeScreen() {
           <Text style={styles.footerBtnText}>Leaderboard</Text>
         </Pressable>
       </View>
-      </View>
+      </Animated.View>
     </SafeAreaView>
   );
 }
@@ -549,6 +625,49 @@ const styles = StyleSheet.create({
   lbValue: { color: "#fff", fontSize: 14, fontWeight: "900" },
   lbValueMe: { color: "#FCA5A5" },
   lbUnit: { color: "#9CA3AF", fontSize: 12, marginTop: 1 },
+  missionsList: {
+    gap: 10,
+    marginTop: 10,
+  },
+  missionItem: {
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
+    borderRadius: 10,
+    padding: 10,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    gap: 6,
+  },
+  missionHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+  },
+  missionTitle: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "800",
+    flex: 1,
+  },
+  missionStatus: {
+    color: "#9CA3AF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  missionStatusDone: {
+    color: "#86efac",
+  },
+  track: {
+    height: 6,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  fill: {
+    height: "100%",
+    backgroundColor: "#DC2626",
+    borderRadius: 999,
+  },
   liveBadge: {
     borderRadius: 999,
     backgroundColor: "rgba(220,38,38,0.20)",

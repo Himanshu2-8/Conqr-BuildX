@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -9,6 +9,12 @@ import {
   type LeaderboardPeriod,
   type LeaderboardRow,
 } from "./services/leaderboard";
+import { useEntranceAnim } from "./hooks/useEntranceAnim";
+
+function FadeInItem({ index, children }: { index: number; children: React.ReactNode }) {
+  const anim = useEntranceAnim(index * 55, 14);
+  return <Animated.View style={anim}>{children}</Animated.View>;
+}
 
 function formatMetricValue(metric: LeaderboardMetric, value: number): string {
   if (metric === "distance") return `${(value / 1000).toFixed(2)} km`;
@@ -161,7 +167,8 @@ export function LeaderboardScreen() {
               const badge = getRankBadge(row.rank);
 
               return (
-                <View key={row.userId} style={[styles.row, topThree && styles.rowTop]}>
+                <FadeInItem key={row.userId} index={index}>
+                <View style={[styles.row, topThree && styles.rowTop]}>
                   <View style={styles.rankWrap}>
                     <MaterialCommunityIcons name={badge.icon as any} size={16} color={badge.color} />
                   </View>
@@ -183,6 +190,7 @@ export function LeaderboardScreen() {
                     <Text style={[styles.value, topThree && styles.valueTop]}>{formatMetricValue(metric, row.value)}</Text>
                   </View>
                 </View>
+                </FadeInItem>
               );
             })}
           </View>

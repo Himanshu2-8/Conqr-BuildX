@@ -1,11 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "./context/AuthContext";
 import { fetchMissionsSummary, type MissionsSummary } from "./services/missions";
+import { useEntranceAnim } from "./hooks/useEntranceAnim";
 
-type QuestFilter = "all" | "daily" | "streak" | "zone";
+function FadeInItem({ index, children }: { index: number; children: React.ReactNode }) {
+  const anim = useEntranceAnim(index * 65, 16);
+  return <Animated.View style={anim}>{children}</Animated.View>;
+}
+
+type QuestFilter = "all" | "distance" | "territory" | "consistency";
 type StatusFilter = "all" | "open" | "done";
 type BadgeFilter = "all" | "unlocked" | "locked";
 
@@ -37,6 +43,7 @@ export function QuestsScreen() {
   const [questFilter, setQuestFilter] = useState<QuestFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [badgeFilter, setBadgeFilter] = useState<BadgeFilter>("all");
+  const pageAnim = useEntranceAnim(40, 18);
 
   useEffect(() => {
     if (!user) {
@@ -68,9 +75,9 @@ export function QuestsScreen() {
   const visibleQuests = useMemo(() => {
     if (!missions) return [];
     return missions.quests.filter((q) => {
-      if (questFilter === "daily" && q.id !== "daily_route") return false;
-      if (questFilter === "streak" && q.id !== "streak_quest") return false;
-      if (questFilter === "zone" && q.id !== "zone_challenge") return false;
+      if (questFilter === "distance" && q.id !== "distance_builder") return false;
+      if (questFilter === "territory" && q.id !== "territory_claimer") return false;
+      if (questFilter === "consistency" && q.id !== "consistency_streak") return false;
       if (statusFilter === "done" && !q.completed) return false;
       if (statusFilter === "open" && q.completed) return false;
       return true;
@@ -89,18 +96,18 @@ export function QuestsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
+        <Animated.View style={[styles.header, pageAnim]}>
           <Text style={styles.title}>Quests</Text>
-          <Text style={styles.subtitle}>Daily routes, streak quests, zone challenges, and badge unlocks.</Text>
-        </View>
+          <Text style={styles.subtitle}>Complete weekly distance, territory, and consistency missions.</Text>
+        </Animated.View>
 
         <LinearGradient colors={["#1a0205", "#050505"]} style={styles.card}>
           <Text style={styles.sectionTitle}>Quest Filters</Text>
           <View style={styles.filterRow}>
             <FilterChip label="All" value="all" selected={questFilter} onSelect={setQuestFilter} />
-            <FilterChip label="Daily" value="daily" selected={questFilter} onSelect={setQuestFilter} />
-            <FilterChip label="Streak" value="streak" selected={questFilter} onSelect={setQuestFilter} />
-            <FilterChip label="Zone" value="zone" selected={questFilter} onSelect={setQuestFilter} />
+            <FilterChip label="Distance" value="distance" selected={questFilter} onSelect={setQuestFilter} />
+            <FilterChip label="Territory" value="territory" selected={questFilter} onSelect={setQuestFilter} />
+            <FilterChip label="Consistency" value="consistency" selected={questFilter} onSelect={setQuestFilter} />
           </View>
           <View style={styles.filterRow}>
             <FilterChip label="Any" value="all" selected={statusFilter} onSelect={setStatusFilter} />
@@ -114,10 +121,11 @@ export function QuestsScreen() {
           {loading ? <Text style={styles.hint}>Loading quests...</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {!loading && !error && visibleQuests.length === 0 ? <Text style={styles.hint}>No quests for selected filters.</Text> : null}
-          {visibleQuests.map((quest) => {
+          {visibleQuests.map((quest, index) => {
             const pct = quest.target > 0 ? Math.min((quest.progress / quest.target) * 100, 100) : 0;
             return (
-              <View key={quest.id} style={styles.questItem}>
+              <FadeInItem key={quest.id} index={index}>
+              <View style={styles.questItem}>
                 <View style={styles.questHead}>
                   <Text style={styles.questTitle}>{quest.title}</Text>
                   <Text style={[styles.questState, quest.completed && styles.questStateDone]}>
@@ -129,6 +137,7 @@ export function QuestsScreen() {
                   <View style={[styles.fill, { width: `${pct}%` }]} />
                 </View>
               </View>
+              </FadeInItem>
             );
           })}
           {missions ? <Text style={styles.hint}>Current streak: {missions.streakDays} day(s)</Text> : null}

@@ -31,8 +31,9 @@ export type MissionsSummary = {
   streakDays: number;
 };
 
-const DAILY_ROUTE_TARGET_M = 5000;
-const ZONE_WEEKLY_TARGET_M2 = 2500;
+const WEEKLY_CAPTURE_TARGET_M2 = 1_000_000;
+const WEEKLY_DISTANCE_TARGET_M = 5000;
+const WEEKLY_ACTIVE_DAYS_TARGET = 3;
 
 function asDate(value: unknown): Date | null {
   if (!value || typeof value !== "object") {
@@ -75,15 +76,15 @@ export async function fetchMissionsSummary(userId: string): Promise<MissionsSumm
   const sessionsQ = query(collection(db, "sessions"), where("userId", "==", userId), orderBy("startedAt", "desc"));
   const sessionsSnap = await getDocs(sessionsQ);
 
-  const todayKey = getDayKey(new Date());
   const weekStart = getWeekStart();
 
-  let todayDistanceM = 0;
   let weekAreaM2 = 0;
+  let weekDistanceM = 0;
   let totalDistanceM = 0;
   let totalAreaM2 = 0;
   let validRunCount = 0;
   const runDayKeys = new Set<string>();
+  const weekRunDayKeys = new Set<string>();
 
   sessionsSnap.forEach((docSnap) => {
     const data = docSnap.data() as SessionDoc;
@@ -103,11 +104,10 @@ export async function fetchMissionsSummary(userId: string): Promise<MissionsSumm
     if (startedAt) {
       const dayKey = getDayKey(startedAt);
       runDayKeys.add(dayKey);
-      if (dayKey === todayKey) {
-        todayDistanceM += distanceM;
-      }
       if (startedAt >= weekStart) {
         weekAreaM2 += areaM2;
+        weekDistanceM += distanceM;
+        weekRunDayKeys.add(dayKey);
       }
     }
   });
@@ -116,31 +116,31 @@ export async function fetchMissionsSummary(userId: string): Promise<MissionsSumm
 
   const quests: QuestProgress[] = [
     {
-      id: "daily_route",
-      title: "Daily Route",
-      description: "Complete a 5 km route today",
-      progress: Math.min(todayDistanceM, DAILY_ROUTE_TARGET_M),
-      target: DAILY_ROUTE_TARGET_M,
+      id: "distance_builder",
+      title: "Distance Builder",
+      description: "Run 5 km this week.",
+      progress: Math.min(weekDistanceM, WEEKLY_DISTANCE_TARGET_M),
+      target: WEEKLY_DISTANCE_TARGET_M,
       unit: "m",
-      completed: todayDistanceM >= DAILY_ROUTE_TARGET_M,
+      completed: weekDistanceM >= WEEKLY_DISTANCE_TARGET_M,
     },
     {
-      id: "streak_quest",
-      title: "Streak Quest",
-      description: "Run 3 days in a row",
-      progress: Math.min(streakDays, 3),
-      target: 3,
-      unit: "days",
-      completed: streakDays >= 3,
-    },
-    {
-      id: "zone_challenge",
-      title: "Zone Challenge",
-      description: "Claim 2,500 m2 this week",
-      progress: Math.min(weekAreaM2, ZONE_WEEKLY_TARGET_M2),
-      target: ZONE_WEEKLY_TARGET_M2,
+      id: "territory_claimer",
+      title: "Territory Claimer",
+      description: "Add 1,000,000 m2 claimed area this week.",
+      progress: Math.min(weekAreaM2, WEEKLY_CAPTURE_TARGET_M2),
+      target: WEEKLY_CAPTURE_TARGET_M2,
       unit: "m2",
-      completed: weekAreaM2 >= ZONE_WEEKLY_TARGET_M2,
+      completed: weekAreaM2 >= WEEKLY_CAPTURE_TARGET_M2,
+    },
+    {
+      id: "consistency_streak",
+      title: "Consistency Streak",
+      description: "Complete valid runs on 3 different days this week.",
+      progress: Math.min(weekRunDayKeys.size, WEEKLY_ACTIVE_DAYS_TARGET),
+      target: WEEKLY_ACTIVE_DAYS_TARGET,
+      unit: "days",
+      completed: weekRunDayKeys.size >= WEEKLY_ACTIVE_DAYS_TARGET,
     },
   ];
 

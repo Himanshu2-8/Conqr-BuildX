@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Animated, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 // @ts-ignore react-native-maps types are resolved at runtime in this Expo app
@@ -8,6 +8,8 @@ import { useRunTracker } from "./hooks/useRunTracker";
 import { useAuth } from "./context/AuthContext";
 import { saveRunSession, type SaveRunResult, updateSessionClaimedArea } from "./services/runSessions";
 import { subscribeAllTerritories, updateTerritoryForRun, type TerritoryState } from "./services/territory";
+import { fetchMissionsSummary } from "./services/missions";
+import { useEntranceAnim } from "./hooks/useEntranceAnim";
 
 function formatDuration(totalSeconds: number) {
   const hrs = Math.floor(totalSeconds / 3600);
@@ -44,6 +46,8 @@ export function RunScreen() {
   const [allTerritories, setAllTerritories] = React.useState<TerritoryState[]>([]);
   const [territoryLoading, setTerritoryLoading] = React.useState(false);
   const mapRef = useRef<MapView | null>(null);
+  const pageAnim = useEntranceAnim(0, 16);
+  const statsAnim = useEntranceAnim(200, 12);
 
   const routeCoordinates = useMemo(
     () => points.map((point) => ({ latitude: point.latitude, longitude: point.longitude })),
@@ -115,6 +119,13 @@ export function RunScreen() {
 
     setSaving(true);
     try {
+      let beforeCompleted = new Set<string>();
+      try {
+        const beforeSummary = await fetchMissionsSummary(user.uid);
+        beforeCompleted = new Set(beforeSummary.quests.filter((quest) => quest.completed).map((quest) => quest.id));
+      } catch {
+        beforeCompleted = new Set<string>();
+      }
       const result = await saveRunSession({
         userId: user.uid,
         startedAtMs,
@@ -134,10 +145,19 @@ export function RunScreen() {
           await updateSessionClaimedArea(result.sessionId, claimedAreaDeltaM2);
         }
       }
+      let unlockedNow: { title: string }[] = [];
+      try {
+        const afterSummary = await fetchMissionsSummary(user.uid);
+        unlockedNow = afterSummary.quests.filter((quest) => quest.completed && !beforeCompleted.has(quest.id));
+      } catch {
+        unlockedNow = [];
+      }
+      const unlockedLine =
+        unlockedNow.length > 0 ? `\nMission unlocked: ${unlockedNow.map((quest) => quest.title).join(", ")}` : "";
       Alert.alert(
         "Run saved",
         result.isValid
-          ? `Session ${result.sessionId} saved.`
+          ? `Session ${result.sessionId} saved.${unlockedLine}`
           : `Saved as invalid: ${result.invalidReason ?? "Unknown reason"}`
       );
     } catch (saveErr: unknown) {
@@ -150,8 +170,8 @@ export function RunScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView
-        style={styles.container}
+      <Animated.ScrollView
+        style={[styles.container, pageAnim]}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
@@ -205,7 +225,7 @@ export function RunScreen() {
           </Text>
         </View>
 
-        <View style={styles.statsGrid}>
+        <Animated.View style={[styles.statsGrid, statsAnim]}>
           <View style={styles.statCard}>
             <Text style={styles.statLabel}>Time</Text>
             <Text style={styles.statValue}>{formatDuration(elapsedSeconds)}</Text>
@@ -218,7 +238,7 @@ export function RunScreen() {
             <Text style={styles.statLabel}>Pace</Text>
             <Text style={styles.statValue}>{formatPace(paceMinPerKm)}</Text>
           </View>
-        </View>
+        </Animated.View>
 
         <View style={styles.metaRow}>
           <Text style={styles.metaText}>GPS points</Text>
@@ -280,7 +300,7 @@ export function RunScreen() {
             </View>
           ) : null}
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
     </SafeAreaView>
   );
 }

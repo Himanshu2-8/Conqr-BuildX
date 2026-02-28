@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../context/AuthContext";
+import { useEntranceAnim } from "../hooks/useEntranceAnim";
 
 export function SignupScreen() {
   const { signUp } = useAuth();
@@ -12,6 +13,8 @@ export function SignupScreen() {
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(false);
+  const brandAnim = useEntranceAnim(0, 24);
+  const cardAnim = useEntranceAnim(120, 24);
 
   const onSignup = async () => {
     setLoading(true);
@@ -29,11 +32,12 @@ export function SignupScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <View style={styles.brand}>
+        <Animated.View style={[styles.brand, brandAnim]}>
           <Text style={styles.brandTitle}>Conqr</Text>
           <Text style={styles.brandSubtitle}>Create your account to get started.</Text>
-        </View>
+        </Animated.View>
 
+        <Animated.View style={cardAnim}>
         <LinearGradient colors={["#1a0205", "#050505"]} style={styles.card}>
           <Text style={styles.title}>Create account</Text>
           <Text style={styles.subtitle}>Join the run and build your streak.</Text>
@@ -109,6 +113,7 @@ export function SignupScreen() {
             <Text style={styles.primaryButtonText}>{loading ? "Creating..." : "Create account"}</Text>
           </Pressable>
         </LinearGradient>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );

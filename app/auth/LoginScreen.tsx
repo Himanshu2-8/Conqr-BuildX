@@ -1,9 +1,10 @@
 import React, { useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../context/AuthContext";
+import { useEntranceAnim } from "../hooks/useEntranceAnim";
 
 export function LoginScreen() {
   const { signIn } = useAuth();
@@ -12,6 +13,8 @@ export function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const brandAnim = useEntranceAnim(0, 24);
+  const cardAnim = useEntranceAnim(120, 24);
 
   const onLogin = async () => {
     setLoading(true);
@@ -26,11 +29,12 @@ export function LoginScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <View style={styles.brand}>
+        <Animated.View style={[styles.brand, brandAnim]}>
           <Text style={styles.brandTitle}>Conqr</Text>
           <Text style={styles.brandSubtitle}>Claim your miles, one run at a time.</Text>
-        </View>
+        </Animated.View>
 
+        <Animated.View style={cardAnim}>
         <LinearGradient colors={["#1a0205", "#050505"]} style={styles.card}>
           <Text style={styles.title}>Welcome back</Text>
           <Text style={styles.subtitle}>Sign in to continue</Text>
@@ -95,6 +99,7 @@ export function LoginScreen() {
             <Text style={styles.secondaryButtonText}>Create account</Text>
           </Pressable>
         </LinearGradient>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
