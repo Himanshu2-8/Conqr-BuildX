@@ -4,13 +4,22 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 // @ts-ignore react-native-maps types are resolved at runtime in this Expo app
 import MapView, { Polygon, Polyline, type Region } from "react-native-maps";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { FogOverlay } from "./components/FogOverlay";
+import { PredictionModal } from "./components/PredictionModal";
 import { useFogOfWar } from "./hooks/useFogOfWar";
 import { useRunTracker } from "./hooks/useRunTracker";
 import { useAuth } from "./context/AuthContext";
 import { saveRunSession, type SaveRunResult, updateSessionClaimedArea } from "./services/runSessions";
 import { subscribeAllTerritories, updateTerritoryForRun, type TerritoryState } from "./services/territory";
 import { fetchMissionsSummary } from "./services/missions";
+import {
+  cancelPrediction,
+  formatPredictionValue,
+  getMetricLabel,
+  resolvePrediction,
+  type Prediction,
+} from "./services/predictions";
 import { useEntranceAnim } from "./hooks/useEntranceAnim";
 
 function formatDuration(totalSeconds: number) {
@@ -55,6 +64,9 @@ export function RunScreen() {
   const [mapRegion, setMapRegion] = React.useState<Region>(DEFAULT_REGION);
   const [currentLocation, setCurrentLocation] = React.useState<MapCoordinate | null>(null);
   const [mapLayout, setMapLayout] = React.useState({ width: 0, height: 0 });
+  const [showPredictionModal, setShowPredictionModal] = React.useState(false);
+  const [activePrediction, setActivePrediction] = React.useState<Prediction | null>(null);
+  const [predictionResult, setPredictionResult] = React.useState<Prediction | null>(null);
   const mapRef = useRef<MapView | null>(null);
   const pageAnim = useEntranceAnim(0, 16);
   const statsAnim = useEntranceAnim(200, 12);
@@ -138,6 +150,7 @@ export function RunScreen() {
     const started = await startRun();
     if (started) {
       setLastSave(null);
+      setPredictionResult(null);
       setRunStartedAtMs(Date.now());
     }
   };
@@ -179,6 +192,21 @@ export function RunScreen() {
           const claimedAreaDeltaM2 = Math.max(updatedTerritory.areaM2 - previousAreaM2, 0);
           await updateSessionClaimedArea(result.sessionId, claimedAreaDeltaM2);
         }
+
+        // ── Evaluate prediction ──────────────────────────────────────
+        if (activePrediction) {
+          try {
+            const resolved = await resolvePrediction(activePrediction.id, result.sessionId, {
+              distanceM: distanceMeters,
+              paceMinPerKm: paceMinPerKm,
+              areaM2: updatedTerritory?.areaM2 ?? 0,
+            });
+            setPredictionResult(resolved);
+            setActivePrediction(null);
+          } catch {
+            // Non-critical – prediction just stays unresolved
+          }
+        }
       }
       let unlockedNow: { title: string }[] = [];
       try {
@@ -189,10 +217,15 @@ export function RunScreen() {
       }
       const unlockedLine =
         unlockedNow.length > 0 ? `\nMission unlocked: ${unlockedNow.map((quest) => quest.title).join(", ")}` : "";
+      const predLine = predictionResult
+        ? `\n${predictionResult.status === "hit"
+            ? `⚡ Prediction HIT! +${Math.round(predictionResult.bonusAreaM2).toLocaleString()} m² bonus`
+            : `Prediction missed. −${Math.round(predictionResult.stakeAreaM2).toLocaleString()} m² territory`}`
+        : "";
       Alert.alert(
         "Run saved",
         result.isValid
-          ? `Session ${result.sessionId} saved.${unlockedLine}`
+          ? `Session ${result.sessionId} saved.${unlockedLine}${predLine}`
           : `Saved as invalid: ${result.invalidReason ?? "Unknown reason"}`
       );
     } catch (saveErr: unknown) {
@@ -322,9 +355,79 @@ export function RunScreen() {
         {territory ? (
           <View style={styles.territoryCard}>
             <Text style={styles.territoryTitle}>Territory</Text>
-            <Text style={styles.territoryText}>{Math.round(territory.areaM2).toLocaleString()} m2 claimed</Text>
+            <Text style={styles.territoryText}>{Math.round(territory.areaM2).toLocaleString()} m² claimed</Text>
           </View>
         ) : null}
+
+        {/* ── Active Prediction Card ──────────────────────────── */}
+        {activePrediction && (
+          <View style={styles.predictionCard}>
+            <View style={styles.predictionHeader}>
+              <MaterialCommunityIcons name="lightning-bolt" size={18} color="#FBBF24" />
+              <Text style={styles.predictionTitle}>Active Prediction</Text>
+            </View>
+            <Text style={styles.predictionMetric}>
+              {getMetricLabel(activePrediction.metric)}: {formatPredictionValue(activePrediction.metric, activePrediction.targetValue)}
+            </Text>
+            <View style={styles.predictionStakes}>
+              <Text style={styles.stakeRisk}>⚠ At risk: {Math.round(activePrediction.stakeAreaM2).toLocaleString()} m²</Text>
+              <Text style={styles.stakeBonus}>✦ Bonus: +{Math.round(activePrediction.bonusAreaM2).toLocaleString()} m²</Text>
+            </View>
+            {!isRunning && (
+              <Pressable
+                hitSlop={8}
+                style={({ pressed }) => [styles.cancelPredBtn, pressed && styles.pressed]}
+                onPress={async () => {
+                  try {
+                    await cancelPrediction(activePrediction.id);
+                    setActivePrediction(null);
+                  } catch {}
+                }}
+              >
+                <Text style={styles.cancelPredText}>Cancel Prediction</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+
+        {/* ── Prediction Result Card ─────────────────────────── */}
+        {predictionResult && (
+          <View style={[
+            styles.predictionCard,
+            predictionResult.status === "hit" ? styles.predictionHit : styles.predictionMiss,
+          ]}>
+            <View style={styles.predictionHeader}>
+              <MaterialCommunityIcons
+                name={predictionResult.status === "hit" ? "check-circle" : "close-circle"}
+                size={20}
+                color={predictionResult.status === "hit" ? "#34D399" : "#FB7185"}
+              />
+              <Text style={[
+                styles.predictionTitle,
+                { color: predictionResult.status === "hit" ? "#34D399" : "#FB7185" },
+              ]}>
+                Prediction {predictionResult.status === "hit" ? "HIT!" : "Missed"}
+              </Text>
+            </View>
+            <Text style={styles.predictionMetric}>
+              Target: {formatPredictionValue(predictionResult.metric, predictionResult.targetValue)}
+              {"  →  "}
+              Actual: {predictionResult.actualValue != null
+                ? formatPredictionValue(predictionResult.metric, predictionResult.actualValue)
+                : "--"}
+            </Text>
+            <Text style={{
+              color: predictionResult.status === "hit" ? "#34D399" : "#FB7185",
+              fontSize: 13,
+              fontWeight: "600",
+              marginTop: 4,
+            }}>
+              {predictionResult.status === "hit"
+                ? `+${Math.round(predictionResult.bonusAreaM2).toLocaleString()} m² bonus territory!`
+                : `-${Math.round(predictionResult.stakeAreaM2).toLocaleString()} m² territory lost`}
+            </Text>
+          </View>
+        )}
 
         <View style={styles.actions}>
           {isRunning ? (
@@ -343,15 +446,28 @@ export function RunScreen() {
               <Text style={styles.primaryButtonText}>Stop Run</Text>
             </Pressable>
           ) : (
-            <Pressable
-              android_ripple={{ color: "rgba(255,255,255,0.12)" }}
-              hitSlop={8}
-              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, saving && styles.disabledButton]}
-              onPress={onStart}
-              disabled={saving}
-            >
-              <Text style={styles.primaryButtonText}>Start Run</Text>
-            </Pressable>
+            <>
+              {!activePrediction && (
+                <Pressable
+                  android_ripple={{ color: "rgba(255,255,255,0.10)" }}
+                  hitSlop={8}
+                  style={({ pressed }) => [styles.predictionButton, pressed && styles.pressed]}
+                  onPress={() => setShowPredictionModal(true)}
+                >
+                  <MaterialCommunityIcons name="lightning-bolt" size={18} color="#FBBF24" />
+                  <Text style={styles.predictionButtonText}>Make a Prediction</Text>
+                </Pressable>
+              )}
+              <Pressable
+                android_ripple={{ color: "rgba(255,255,255,0.12)" }}
+                hitSlop={8}
+                style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, saving && styles.disabledButton]}
+                onPress={onStart}
+                disabled={saving}
+              >
+                <Text style={styles.primaryButtonText}>Start Run</Text>
+              </Pressable>
+            </>
           )}
           <Pressable
             android_ripple={{ color: "rgba(255,255,255,0.10)" }}
@@ -373,6 +489,16 @@ export function RunScreen() {
           ) : null}
         </View>
       </Animated.ScrollView>
+
+      <PredictionModal
+        visible={showPredictionModal}
+        onClose={() => setShowPredictionModal(false)}
+        currentTerritoryM2={territory?.areaM2 ?? 0}
+        onPredictionCreated={(prediction) => {
+          setActivePrediction(prediction);
+          setShowPredictionModal(false);
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -563,5 +689,82 @@ const styles = StyleSheet.create({
   territoryText: {
     color: "#FCA5A5",
     fontSize: 13,
+  },
+  // ── Prediction styles ──────────────────────────────────────
+  predictionCard: {
+    borderWidth: 1,
+    borderColor: "rgba(251,191,36,0.35)",
+    borderRadius: 12,
+    padding: 14,
+    gap: 6,
+    backgroundColor: "rgba(251,191,36,0.08)",
+  },
+  predictionHit: {
+    borderColor: "rgba(52,211,153,0.40)",
+    backgroundColor: "rgba(52,211,153,0.08)",
+  },
+  predictionMiss: {
+    borderColor: "rgba(251,113,133,0.40)",
+    backgroundColor: "rgba(251,113,133,0.08)",
+  },
+  predictionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  predictionTitle: {
+    color: "#FBBF24",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  predictionMetric: {
+    color: "#E5E7EB",
+    fontSize: 13,
+  },
+  predictionStakes: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 2,
+  },
+  stakeRisk: {
+    color: "#FB7185",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  stakeBonus: {
+    color: "#34D399",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  cancelPredBtn: {
+    alignSelf: "flex-start",
+    marginTop: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(251,113,133,0.40)",
+    backgroundColor: "rgba(251,113,133,0.08)",
+  },
+  cancelPredText: {
+    color: "#FB7185",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  predictionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderRadius: 14,
+    paddingVertical: 14,
+    borderWidth: 1,
+    borderColor: "rgba(251,191,36,0.45)",
+    backgroundColor: "rgba(251,191,36,0.10)",
+  },
+  predictionButtonText: {
+    color: "#FBBF24",
+    fontSize: 15,
+    fontWeight: "700",
   },
 });
