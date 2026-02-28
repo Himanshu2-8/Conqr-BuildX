@@ -716,7 +716,10 @@ export function HomeScreen() {
                     </Text>
                   </View>
 
-                  <View style={styles.lbValueWrap}>                    <Text style={[styles.lbValue, isMe && styles.lbValueMe]}>{Math.round(row.value).toLocaleString()}</Text>`r`n                    <Text style={styles.lbUnit}>pts</Text>`r`n                  </View>
+                  <View style={styles.lbValueWrap}>
+                    <Text style={[styles.lbValue, isMe && styles.lbValueMe]}>{Math.round(row.value).toLocaleString()}</Text>
+                    <Text style={styles.lbUnit}>pts</Text>
+                  </View>
                 </View>
               );
             })}
@@ -981,6 +984,11 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 });
+
+
+
+
+
 
 
 

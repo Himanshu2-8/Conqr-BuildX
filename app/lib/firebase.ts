@@ -1,5 +1,7 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, initializeAuth, type Auth, type Persistence } from "firebase/auth";
+import * as FirebaseAuth from "firebase/auth";
+import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
 import { initializeFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -14,7 +16,25 @@ const firebaseConfig = {
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+// Ensure auth session persists on React Native when API is available in installed firebase build.
+const getReactNativePersistence = (FirebaseAuth as { getReactNativePersistence?: (storage: unknown) => Persistence })
+  .getReactNativePersistence;
+
+let authInstance: Auth;
+if (typeof getReactNativePersistence === "function") {
+  try {
+    authInstance = initializeAuth(app, {
+      persistence: getReactNativePersistence(ReactNativeAsyncStorage),
+    });
+  } catch {
+    authInstance = getAuth(app);
+  }
+} else {
+  authInstance = getAuth(app);
+}
+
+export const auth = authInstance;
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 });
+
