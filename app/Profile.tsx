@@ -3,8 +3,11 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAuth } from "./context/AuthContext";
-import { fetchUserProfile, updateUserProfile } from "./services/profile";
+import { fetchUserProfile, updateUserProfile, type UserProfile } from "./services/profile";
+import { fetchMissionsSummary, type MissionsSummary } from "./services/missions";
+import { ActivityRings } from "./ui/ActivityRings";
 
 export function ProfileScreen() {
   const { user } = useAuth();
@@ -13,6 +16,9 @@ export function ProfileScreen() {
   const [username, setUsername] = useState("");
   const [city, setCity] = useState("");
   const [collegeName, setCollegeName] = useState("");
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [missions, setMissions] = useState<MissionsSummary | null>(null);
+  const [selectedRingId, setSelectedRingId] = useState<string>("move");
 
   const loadProfile = useCallback(async () => {
     if (!user) {
@@ -21,10 +27,15 @@ export function ProfileScreen() {
     }
     setLoading(true);
     try {
-      const profile = await fetchUserProfile(user.uid, user.email ?? "");
-      setUsername(profile.username || user.displayName || "");
-      setCity(profile.city);
-      setCollegeName(profile.collegeName);
+      const [nextProfile, nextMissions] = await Promise.all([
+        fetchUserProfile(user.uid, user.email ?? ""),
+        fetchMissionsSummary(user.uid),
+      ]);
+      setProfile(nextProfile);
+      setMissions(nextMissions);
+      setUsername(nextProfile.username || user.displayName || "");
+      setCity(nextProfile.city);
+      setCollegeName(nextProfile.collegeName);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Failed to load profile";
       Alert.alert("Profile error", message);
@@ -38,6 +49,40 @@ export function ProfileScreen() {
       void loadProfile();
     }, [loadProfile])
   );
+
+  const name = username?.trim() || user?.displayName || "Runner";
+  const totalDistanceM = profile?.totalDistance ?? 0;
+  const totalDistanceKm = totalDistanceM / 1000;
+  const streakDays = missions?.streakDays ?? profile?.streak ?? 0;
+  const estimatedCalories = Math.round(totalDistanceKm * 70); // simple demo estimate @70kg
+
+  const moveGoalKcal = 500;
+  const exerciseGoalKm = 5;
+  const standGoalDays = 7;
+
+  const rings = [
+    {
+      id: "move",
+      label: "Move",
+      valueLabel: `${estimatedCalories}/${moveGoalKcal} kcal`,
+      progress: moveGoalKcal > 0 ? estimatedCalories / moveGoalKcal : 0,
+      color: "#EF4444",
+    },
+    {
+      id: "exercise",
+      label: "Exercise",
+      valueLabel: `${totalDistanceKm.toFixed(1)}/${exerciseGoalKm} km`,
+      progress: exerciseGoalKm > 0 ? totalDistanceKm / exerciseGoalKm : 0,
+      color: "#22C55E",
+    },
+    {
+      id: "stand",
+      label: "Stand",
+      valueLabel: `${streakDays}/${standGoalDays} days`,
+      progress: standGoalDays > 0 ? streakDays / standGoalDays : 0,
+      color: "#38BDF8",
+    },
+  ];
 
   const onSave = async () => {
     if (!user) {
@@ -67,6 +112,29 @@ export function ProfileScreen() {
           <Text style={styles.title}>Profile</Text>
           <Text style={styles.subtitle}>Personalize your identity and mission context.</Text>
         </View>
+
+        <LinearGradient colors={["#1a0205", "#050505"]} style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View style={styles.iconBox}>
+              <MaterialCommunityIcons name="account-circle-outline" size={18} color="#DC2626" />
+            </View>
+            <Text style={styles.sectionTitle}>{name}</Text>
+          </View>
+
+          <ActivityRings rings={rings} selectedId={selectedRingId} onSelect={setSelectedRingId} />
+
+          <View style={styles.quickStatsRow}>
+            <View style={styles.quickStat}>
+              <Text style={styles.quickLabel}>Territory</Text>
+              <Text style={styles.quickValue}>{Math.round(profile?.totalArea ?? 0).toLocaleString()} m2</Text>
+            </View>
+            <View style={styles.quickStat}>
+              <Text style={styles.quickLabel}>Level</Text>
+              <Text style={styles.quickValue}>{missions?.badges?.filter((b) => b.unlocked).length ?? 0} badges</Text>
+            </View>
+          </View>
+          <Text style={styles.hint}>Tap a ring to focus it.</Text>
+        </LinearGradient>
 
         <LinearGradient colors={["#1a0205", "#050505"]} style={styles.card}>
           <Text style={styles.sectionTitle}>Account</Text>
@@ -131,7 +199,28 @@ const styles = StyleSheet.create({
     borderColor: "rgba(127, 29, 29, 0.30)",
     gap: 12,
   },
+  cardHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   sectionTitle: { color: "#fff", fontSize: 18, fontWeight: "800" },
+  iconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "rgba(220, 38, 38, 0.20)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickStatsRow: { flexDirection: "row", gap: 10, marginTop: 6 },
+  quickStat: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "rgba(0,0,0,0.35)",
+    gap: 4,
+  },
+  quickLabel: { color: "#9CA3AF", fontSize: 12, fontWeight: "900" },
+  quickValue: { color: "#fff", fontSize: 14, fontWeight: "900" },
   fieldGroup: { gap: 6 },
   label: { color: "#D1D5DB", fontSize: 12, fontWeight: "700" },
   readonly: {
@@ -166,4 +255,5 @@ const styles = StyleSheet.create({
   saveText: { color: "#fff", fontSize: 15, fontWeight: "900" },
   pressed: { transform: [{ scale: 0.985 }], opacity: 0.95 },
   disabled: { opacity: 0.6 },
+  hint: { color: "#9CA3AF", fontSize: 12 },
 });

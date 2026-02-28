@@ -5,7 +5,7 @@ import type { Region } from "react-native-maps";
 // @ts-ignore react-native-svg is provided at runtime in Expo, even if local types are absent
 const SvgModule = require("react-native-svg");
 const Svg = SvgModule.default ?? SvgModule;
-const { Circle, Defs, Ellipse, Mask, Polygon: SvgPolygon, RadialGradient, Rect, Stop } = SvgModule;
+const { Defs, Ellipse, Mask, Polygon: SvgPolygon, RadialGradient, Rect, Stop } = SvgModule;
 
 type MapCoordinate = {
   latitude: number;
@@ -16,7 +16,7 @@ type FogOverlayProps = {
   width: number;
   height: number;
   region: Region;
-  revealPoints: MapCoordinate[];
+  revealPoints?: MapCoordinate[];
   revealPolygons?: MapCoordinate[][];
 };
 
@@ -48,7 +48,7 @@ function buildClouds(width: number, height: number) {
   ];
 }
 
-export function FogOverlay({ width, height, region, revealPoints, revealPolygons = [] }: FogOverlayProps) {
+export function FogOverlay({ width, height, region, revealPoints = [], revealPolygons = [] }: FogOverlayProps) {
   if (width <= 0 || height <= 0) {
     return null;
   }
@@ -73,6 +73,10 @@ export function FogOverlay({ width, height, region, revealPoints, revealPolygons
           </RadialGradient>
           <Mask id="fogMask">
             <Rect x="0" y="0" width={width} height={height} fill="white" />
+            {revealPoints.map((point, index) => {
+              const { x, y } = toScreenPoint(point, region, width, height);
+              return <Ellipse key={`pt-${index}`} cx={x} cy={y} rx={baseRadius} ry={baseRadius} fill="black" />;
+            })}
             {revealPolygons
               .filter((polygon) => polygon.length >= 3)
               .map((polygon, index) => (
@@ -82,12 +86,6 @@ export function FogOverlay({ width, height, region, revealPoints, revealPolygons
                   fill="black"
                 />
               ))}
-            {revealPoints.map((point, index) => {
-              const { x, y } = toScreenPoint(point, region, width, height);
-              return (
-                <Circle key={`${x}-${y}-${index}`} cx={x} cy={y} r={baseRadius} fill="url(#revealGrad)" />
-              );
-            })}
           </Mask>
         </Defs>
         <Rect x="0" y="0" width={width} height={height} fill="rgba(70,70,70,0.42)" mask="url(#fogMask)" />

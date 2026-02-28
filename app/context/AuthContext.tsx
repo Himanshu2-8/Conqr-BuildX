@@ -37,6 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       uid: currentUser.uid,
       email: currentUser.email ?? "",
       username: username ?? currentUser.displayName ?? `user_${currentUser.uid.slice(0, 8)}`,
+      usernameLower: (username ?? currentUser.displayName ?? `user_${currentUser.uid.slice(0, 8)}`).toLowerCase(),
       avatarUrl: "",
       city: "",
       totalDistance: 0,

@@ -70,6 +70,7 @@ export async function updateUserProfile(uid: string, input: UpdateProfileInput):
   const userRef = doc(db, "users", uid);
   const payload = {
     username: input.username.trim(),
+    usernameLower: input.username.trim().toLowerCase(),
     city: input.city.trim(),
     collegeName: input.collegeName.trim(),
     updatedAt: serverTimestamp(),

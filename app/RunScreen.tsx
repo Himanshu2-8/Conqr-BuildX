@@ -76,6 +76,27 @@ export function RunScreen() {
     () => points.map((point) => ({ latitude: point.latitude, longitude: point.longitude })),
     [points]
   );
+
+  // When not running and no active route, auto-fit to territories so the preview starts focused.
+  useEffect(() => {
+    if (!mapRef.current) {
+      return;
+    }
+    if (isRunning) {
+      return;
+    }
+    if (routeCoordinates.length > 0) {
+      return;
+    }
+    const territoryPoints = allTerritories.flatMap((t) => t.coordinates);
+    if (territoryPoints.length < 2) {
+      return;
+    }
+    mapRef.current.fitToCoordinates(territoryPoints, {
+      edgePadding: { top: 80, right: 40, bottom: 120, left: 40 },
+      animated: true,
+    });
+  }, [allTerritories, isRunning, routeCoordinates.length]);
   const territoryRevealPoints = useMemo(
     () => allTerritories.flatMap((shape) => shape.coordinates),
     [allTerritories]
@@ -87,11 +108,18 @@ export function RunScreen() {
         : [...routeCoordinates, ...territoryRevealPoints],
     [currentLocation, routeCoordinates, territoryRevealPoints]
   );
-  const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
+  const { fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
     user?.uid ?? null,
     mapRegion,
     extraRevealPoints
   );
+
+  useEffect(() => {
+    if (!currentLocation) {
+      return;
+    }
+    revealAroundPoints([currentLocation]);
+  }, [currentLocation, revealAroundPoints]);
 
   useEffect(() => {
     if (!mapRef.current || routeCoordinates.length === 0) {
@@ -117,20 +145,6 @@ export function RunScreen() {
       animated: true,
     });
   }, [routeCoordinates]);
-
-  useEffect(() => {
-    if (routeCoordinates.length === 0) {
-      return;
-    }
-    revealAroundPoints(routeCoordinates);
-  }, [revealAroundPoints, routeCoordinates]);
-
-  useEffect(() => {
-    if (!currentLocation) {
-      return;
-    }
-    revealAroundPoints([currentLocation]);
-  }, [currentLocation, revealAroundPoints]);
 
   useEffect(() => {
     if (!user) {
@@ -280,9 +294,6 @@ export function RunScreen() {
               style={styles.map}
               initialRegion={DEFAULT_REGION}
               onRegionChangeComplete={setMapRegion}
-              showsUserLocation
-              followsUserLocation
-              showsMyLocationButton
               onUserLocationChange={(event) => {
                 const nextLocation = event.nativeEvent.coordinate;
                 if (!nextLocation) {
@@ -321,10 +332,16 @@ export function RunScreen() {
                 width={mapLayout.width}
                 height={mapLayout.height}
                 region={mapRegion}
-                revealPoints={revealPoints}
                 revealPolygons={allTerritories.map((shape) => shape.coordinates)}
               />
             ) : null}
+            <Pressable
+              onPress={() => navigation.navigate("MapPop")}
+              hitSlop={10}
+              style={({ pressed }) => [styles.mapExpandBtn, pressed && styles.pressed]}
+            >
+              <Text style={styles.mapExpandIcon}>⤢</Text>
+            </Pressable>
           </View>
           <Text style={styles.mapCaption}>
             {isRunning ? "Current run polyline is updating live." : "Last route remains visible after finishing."}
@@ -333,7 +350,7 @@ export function RunScreen() {
             {`Fog-of-war active. ${exploredCount} tiles revealed${fogLoading ? "..." : "."}`}
           </Text>
           <Text style={styles.mapCaption}>
-            {currentLocation ? "Current location visible and nearby area revealed." : "Waiting for current location..."}
+            {currentLocation ? "Current location visible." : "Waiting for current location..."}
           </Text>
         </View>
 
@@ -488,13 +505,29 @@ const styles = StyleSheet.create({
   },
   mapViewport: {
     width: "100%",
-    height: 240,
+    height: 320,
     overflow: "hidden",
+    position: "relative",
   },
   map: {
     height: "100%",
     width: "100%",
   },
+  mapExpandBtn: {
+    position: "absolute",
+    right: 10,
+    top: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 6,
+  },
+  mapExpandIcon: { color: "#fff", fontSize: 16, fontWeight: "900" },
   mapCaption: {
     color: "#9CA3AF",
     fontSize: 12,
