@@ -14,6 +14,7 @@ import { fetchDashboardSummary, type DashboardSummary } from "./services/dashboa
 import { subscribeAllTerritories, type TerritoryState } from "./services/territory";
 import { subscribeLeaderboard, type LeaderboardRow } from "./services/leaderboard";
 import { fetchMissionsSummary, type QuestProgress } from "./services/missions";
+import { LiveBadge } from "./ui/LiveBadge";
 
 const FALLBACK_REGION: Region = {
   latitude: 20.5937,
@@ -239,18 +240,9 @@ export function HomeScreen() {
   const name = user?.displayName || "Runner";
   const allRegion = getRegionFromTerritories(allTerritories);
   const territoryRegion = allRegion ?? (territory?.coordinates ? getRegionFromPolygon(territory.coordinates) : FALLBACK_REGION);
-  const territoryRevealPoints = React.useMemo(
-    () => allTerritories.flatMap((shape) => shape.coordinates),
-    [allTerritories]
-  );
-  const extraRevealPoints = React.useMemo(
-    () => (currentLocation ? [currentLocation, ...territoryRevealPoints] : territoryRevealPoints),
-    [currentLocation, territoryRevealPoints]
-  );
-  const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
+  const { fogEnabled, exploredCount, loading: fogLoading } = useFogOfWar(
     user?.uid ?? null,
-    mapRegion,
-    extraRevealPoints
+    mapRegion
   );
   const totalKm = summary ? summary.totalDistanceM / 1000 : 0;
 
@@ -285,13 +277,6 @@ export function HomeScreen() {
     territoryRegion.latitudeDelta,
     territoryRegion.longitudeDelta,
   ]);
-
-  useEffect(() => {
-    if (!currentLocation) {
-      return;
-    }
-    revealAroundPoints([currentLocation]);
-  }, [currentLocation, revealAroundPoints]);
 
   useEffect(() => {
     if (!currentLocation || territory) {
@@ -349,9 +334,7 @@ export function HomeScreen() {
               <Image source={require("./assets/map.png")} style={styles.cardIconImage} />
             </View>
             <Text style={styles.cardTitle}>Your Territory</Text>
-            <View style={styles.liveBadge}>
-              <Text style={styles.liveBadgeText}>LIVE</Text>
-            </View>
+            <LiveBadge />
           </View>
 
           <GradientBox style={styles.bigBox}>
@@ -401,8 +384,6 @@ export function HomeScreen() {
                 style={styles.map}
                 region={mapRegion}
                 onRegionChangeComplete={setMapRegion}
-                showsUserLocation
-                showsMyLocationButton
                 onUserLocationChange={(event) => {
                   const nextLocation = event.nativeEvent.coordinate;
                   if (!nextLocation) {
@@ -433,7 +414,6 @@ export function HomeScreen() {
                   width={mapLayout.width}
                   height={mapLayout.height}
                   region={mapRegion}
-                  revealPoints={revealPoints}
                   revealPolygons={allTerritories.map((shape) => shape.coordinates)}
                 />
               ) : null}
@@ -443,7 +423,7 @@ export function HomeScreen() {
               {`Fog active. ${exploredCount} tiles explored${fogLoading ? "..." : "."}`}
             </Text>
             <Text style={styles.hint}>
-              {currentLocation ? "Current location visible and nearby area revealed." : "Waiting for current location..."}
+              {currentLocation ? "Current location visible." : "Waiting for current location..."}
             </Text>
             <Text style={styles.hint}>{territoryLiveText}</Text>
             <Text style={styles.hint}>
@@ -507,9 +487,7 @@ export function HomeScreen() {
               <Text style={styles.cardTitle}>Leaderboard</Text>
               <Text style={styles.hint}>Top 3 + your position</Text>
             </View>
-            <View style={styles.liveBadge}>
-              <Text style={styles.liveBadgeText}>LIVE</Text>
-            </View>
+            <LiveBadge />
           </View>
           <Text style={styles.hint}>{leaderboardLiveText}</Text>
 
@@ -761,20 +739,6 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#DC2626",
     borderRadius: 999,
-  },
-  liveBadge: {
-    borderRadius: 999,
-    backgroundColor: "rgba(220,38,38,0.20)",
-    borderWidth: 1,
-    borderColor: "rgba(220,38,38,0.60)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  liveBadgeText: {
-    color: "#FCA5A5",
-    fontSize: 10,
-    fontWeight: "900",
-    letterSpacing: 0.6,
   },
   footerNav: {
     flexDirection: "row",

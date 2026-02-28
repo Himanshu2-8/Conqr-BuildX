@@ -63,21 +63,9 @@ export function RunScreen() {
     () => points.map((point) => ({ latitude: point.latitude, longitude: point.longitude })),
     [points]
   );
-  const territoryRevealPoints = useMemo(
-    () => allTerritories.flatMap((shape) => shape.coordinates),
-    [allTerritories]
-  );
-  const extraRevealPoints = useMemo(
-    () =>
-      currentLocation
-        ? [currentLocation, ...routeCoordinates, ...territoryRevealPoints]
-        : [...routeCoordinates, ...territoryRevealPoints],
-    [currentLocation, routeCoordinates, territoryRevealPoints]
-  );
-  const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
+  const { fogEnabled, exploredCount, loading: fogLoading } = useFogOfWar(
     user?.uid ?? null,
-    mapRegion,
-    extraRevealPoints
+    mapRegion
   );
 
   useEffect(() => {
@@ -104,20 +92,6 @@ export function RunScreen() {
       animated: true,
     });
   }, [routeCoordinates]);
-
-  useEffect(() => {
-    if (routeCoordinates.length === 0) {
-      return;
-    }
-    revealAroundPoints(routeCoordinates);
-  }, [revealAroundPoints, routeCoordinates]);
-
-  useEffect(() => {
-    if (!currentLocation) {
-      return;
-    }
-    revealAroundPoints([currentLocation]);
-  }, [currentLocation, revealAroundPoints]);
 
   useEffect(() => {
     if (!user) {
@@ -242,9 +216,6 @@ export function RunScreen() {
               style={styles.map}
               initialRegion={DEFAULT_REGION}
               onRegionChangeComplete={setMapRegion}
-              showsUserLocation
-              followsUserLocation
-              showsMyLocationButton
               onUserLocationChange={(event) => {
                 const nextLocation = event.nativeEvent.coordinate;
                 if (!nextLocation) {
@@ -283,7 +254,6 @@ export function RunScreen() {
                 width={mapLayout.width}
                 height={mapLayout.height}
                 region={mapRegion}
-                revealPoints={revealPoints}
                 revealPolygons={allTerritories.map((shape) => shape.coordinates)}
               />
             ) : null}
@@ -295,7 +265,7 @@ export function RunScreen() {
             {`Fog-of-war active. ${exploredCount} tiles revealed${fogLoading ? "..." : "."}`}
           </Text>
           <Text style={styles.mapCaption}>
-            {currentLocation ? "Current location visible and nearby area revealed." : "Waiting for current location..."}
+            {currentLocation ? "Current location visible." : "Waiting for current location..."}
           </Text>
         </View>
 

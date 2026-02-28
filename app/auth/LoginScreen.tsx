@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Alert, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Animated, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -29,90 +29,104 @@ export function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <Animated.View style={[styles.brand, brandAnim]}>
-          <AppLogo width={112} height={60} />
-          <Text style={styles.brandTitle}>Conqr</Text>
-          <Text style={styles.brandSubtitle}>Claim your miles, one run at a time.</Text>
-        </Animated.View>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        >
+          <Animated.View style={[styles.brand, brandAnim]}>
+            <AppLogo width={112} height={60} />
+            <Text style={styles.brandTitle}>Conqr</Text>
+            <Text style={styles.brandSubtitle}>Claim your miles, one run at a time.</Text>
+          </Animated.View>
 
-        <Animated.View style={cardAnim}>
-        <LinearGradient colors={["#1a0205", "#050505"]} style={styles.card}>
-          <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Sign in to continue</Text>
+          <Animated.View style={cardAnim}>
+            <LinearGradient colors={["#1a0205", "#050505"]} style={styles.card}>
+              <Text style={styles.title}>Welcome back</Text>
+              <Text style={styles.subtitle}>Sign in to continue</Text>
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              placeholder="you@example.com"
-              placeholderTextColor="#9CA3AF"
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoCorrect={false}
-              autoComplete="email"
-              textContentType="emailAddress"
-              keyboardAppearance="dark"
-              returnKeyType="next"
-              value={email}
-              onChangeText={setEmail}
-              selectionColor="#DC2626"
-              style={styles.input}
-              blurOnSubmit={false}
-              onSubmitEditing={() => passwordRef.current?.focus()}
-            />
-          </View>
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Email</Text>
+                <TextInput
+                  placeholder="you@example.com"
+                  placeholderTextColor="#9CA3AF"
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoCorrect={false}
+                  autoComplete="email"
+                  textContentType="emailAddress"
+                  keyboardAppearance="dark"
+                  returnKeyType="next"
+                  value={email}
+                  onChangeText={setEmail}
+                  selectionColor="#DC2626"
+                  style={styles.input}
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                />
+              </View>
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              placeholder="********"
-              placeholderTextColor="#9CA3AF"
-              secureTextEntry
-              autoCorrect={false}
-              autoComplete="password"
-              textContentType="password"
-              keyboardAppearance="dark"
-              returnKeyType="go"
-              value={password}
-              onChangeText={setPassword}
-              selectionColor="#DC2626"
-              style={styles.input}
-              ref={passwordRef}
-              onSubmitEditing={onLogin}
-            />
-          </View>
+              <View style={styles.fieldGroup}>
+                <Text style={styles.label}>Password</Text>
+                <TextInput
+                  placeholder="********"
+                  placeholderTextColor="#9CA3AF"
+                  secureTextEntry
+                  autoCorrect={false}
+                  autoComplete="password"
+                  textContentType="password"
+                  keyboardAppearance="dark"
+                  returnKeyType="go"
+                  value={password}
+                  onChangeText={setPassword}
+                  selectionColor="#DC2626"
+                  style={styles.input}
+                  ref={passwordRef}
+                  onSubmitEditing={onLogin}
+                />
+              </View>
 
-          <Pressable
-            android_ripple={{ color: "rgba(255,255,255,0.12)" }}
-            hitSlop={10}
-            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, loading && styles.primaryButtonDisabled]}
-            onPress={onLogin}
-            disabled={loading}
-          >
-            <Text style={styles.primaryButtonText}>{loading ? "Logging in..." : "Login"}</Text>
-          </Pressable>
+              <Pressable
+                android_ripple={{ color: "rgba(255,255,255,0.12)" }}
+                hitSlop={10}
+                style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, loading && styles.primaryButtonDisabled]}
+                onPress={onLogin}
+                disabled={loading}
+              >
+                <Text style={styles.primaryButtonText}>{loading ? "Logging in..." : "Login"}</Text>
+              </Pressable>
 
-          <Pressable
-            android_ripple={{ color: "rgba(255,255,255,0.10)" }}
-            hitSlop={10}
-            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-            onPress={() => navigation.navigate("Signup")}
-          >
-            <Text style={styles.secondaryButtonText}>Create account</Text>
-          </Pressable>
-        </LinearGradient>
-        </Animated.View>
-      </ScrollView>
+              <Pressable
+                android_ripple={{ color: "rgba(255,255,255,0.10)" }}
+                hitSlop={10}
+                style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+                onPress={() => navigation.navigate("Signup")}
+              >
+                <Text style={styles.secondaryButtonText}>Create account</Text>
+              </Pressable>
+            </LinearGradient>
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#000" },
+  flex: { flex: 1 },
   container: {
     flexGrow: 1,
     padding: 16,
-    justifyContent: "center",
+    paddingVertical: 24,
+    paddingBottom: 48,
+    justifyContent: "flex-start",
     gap: 14,
     maxWidth: 520,
     width: "100%",

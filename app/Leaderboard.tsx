@@ -10,6 +10,7 @@ import {
   type LeaderboardRow,
 } from "./services/leaderboard";
 import { useEntranceAnim } from "./hooks/useEntranceAnim";
+import { LiveBadge } from "./ui/LiveBadge";
 
 function FadeInItem({ index, children }: { index: number; children: React.ReactNode }) {
   const anim = useEntranceAnim(index * 55, 14);
@@ -105,9 +106,7 @@ export function LeaderboardScreen() {
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <Text style={styles.h1}>Leaderboard</Text>
-            <View style={styles.liveBadge}>
-              <Text style={styles.liveBadgeText}>LIVE</Text>
-            </View>
+            <LiveBadge />
           </View>
           <Text style={styles.sub}>
             Rank runners by {metricLabel.toLowerCase()} for this {period} window.
@@ -295,18 +294,4 @@ const styles = StyleSheet.create({
   valueWrap: { alignItems: "flex-end" },
   value: { color: "#E5E7EB", fontWeight: "900", fontSize: 12 },
   valueTop: { color: "#FCA5A5" },
-  liveBadge: {
-    borderRadius: 999,
-    backgroundColor: "rgba(220,38,38,0.20)",
-    borderWidth: 1,
-    borderColor: "rgba(220,38,38,0.60)",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  liveBadgeText: {
-    color: "#FCA5A5",
-    fontSize: 10,
-    fontWeight: "900",
-    letterSpacing: 0.6,
-  },
 });
