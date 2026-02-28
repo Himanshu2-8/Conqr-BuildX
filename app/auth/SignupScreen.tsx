@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../context/AuthContext";
 import { useEntranceAnim } from "../hooks/useEntranceAnim";
+import { AppLogo } from "../ui/AppLogo";
 
 export function SignupScreen() {
   const { signUp } = useAuth();
@@ -33,6 +34,7 @@ export function SignupScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Animated.View style={[styles.brand, brandAnim]}>
+          <AppLogo width={112} height={60} />
           <Text style={styles.brandTitle}>Conqr</Text>
           <Text style={styles.brandSubtitle}>Create your account to get started.</Text>
         </Animated.View>
