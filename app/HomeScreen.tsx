@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { Animated, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -15,6 +15,7 @@ import { subscribeAllTerritories, type TerritoryState } from "./services/territo
 import { subscribeLeaderboard, type LeaderboardRow } from "./services/leaderboard";
 import { fetchMissionsSummary, type QuestProgress } from "./services/missions";
 import { LiveBadge } from "./ui/LiveBadge";
+import { fetchUserProfile } from "./services/profile";
 
 const FALLBACK_REGION: Region = {
   latitude: 20.5937,
@@ -22,6 +23,7 @@ const FALLBACK_REGION: Region = {
   latitudeDelta: 12,
   longitudeDelta: 12,
 };
+const NEARBY_TERRITORY_RADIUS_M = 2500;
 
 function getRegionFromPolygon(coords: TerritoryState["coordinates"]): Region {
   const lats = coords.map((c) => c.latitude);
@@ -111,13 +113,41 @@ type MapCoordinate = {
   longitude: number;
 };
 
+function toRad(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function distanceMeters(a: MapCoordinate, b: MapCoordinate) {
+  const r = 6371000;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLon = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const h =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return 2 * r * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function isTerritoryNearby(territory: TerritoryState, location: MapCoordinate, radiusM: number) {
+  for (const point of territory.coordinates) {
+    if (distanceMeters(point, location) <= radiusM) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function HomeScreen() {
   const { user, signOut } = useAuth();
   const navigation = useNavigation<any>();
+  const mapRef = useRef<MapView | null>(null);
+  const userInteractedRef = useRef(false);
 
   const [summary, setSummary] = React.useState<DashboardSummary | null>(null);
   const [loadingSummary, setLoadingSummary] = React.useState(false);
   const [summaryError, setSummaryError] = React.useState<string | null>(null);
+  const [profileUsername, setProfileUsername] = React.useState<string>("");
 
   const [territory, setTerritory] = React.useState<TerritoryState | null>(null);
   const [allTerritories, setAllTerritories] = React.useState<TerritoryState[]>([]);
@@ -138,6 +168,7 @@ export function HomeScreen() {
   useEffect(() => {
     if (!user) {
       setSummary(null);
+      setProfileUsername("");
       return;
     }
 
@@ -158,6 +189,26 @@ export function HomeScreen() {
         if (active) setLoadingSummary(false);
       });
 
+    return () => {
+      active = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setProfileUsername("");
+      return;
+    }
+    let active = true;
+    fetchUserProfile(user.uid, user.email ?? "")
+      .then((profile) => {
+        if (!active) return;
+        setProfileUsername(typeof profile.username === "string" ? profile.username : "");
+      })
+      .catch(() => {
+        if (!active) return;
+        setProfileUsername("");
+      });
     return () => {
       active = false;
     };
@@ -237,12 +288,28 @@ export function HomeScreen() {
     };
   }, [user]);
 
-  const name = user?.displayName || "Runner";
+  const name = profileUsername.trim() || user?.displayName || "Runner";
   const allRegion = getRegionFromTerritories(allTerritories);
   const territoryRegion = allRegion ?? (territory?.coordinates ? getRegionFromPolygon(territory.coordinates) : FALLBACK_REGION);
-  const { fogEnabled, exploredCount, loading: fogLoading } = useFogOfWar(
+  const visibleTerritories = React.useMemo(() => {
+    if (!currentLocation) {
+      return allTerritories;
+    }
+    const nearby = allTerritories.filter((shape) => isTerritoryNearby(shape, currentLocation, NEARBY_TERRITORY_RADIUS_M));
+    return nearby.length > 0 ? nearby : [];
+  }, [allTerritories, currentLocation]);
+  const territoryRevealPoints = React.useMemo(
+    () => visibleTerritories.flatMap((shape) => shape.coordinates),
+    [visibleTerritories]
+  );
+  const extraRevealPoints = React.useMemo(
+    () => (currentLocation ? [currentLocation, ...territoryRevealPoints] : territoryRevealPoints),
+    [currentLocation, territoryRevealPoints]
+  );
+  const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
     user?.uid ?? null,
-    mapRegion
+    mapRegion,
+    extraRevealPoints
   );
   const totalKm = summary ? summary.totalDistanceM / 1000 : 0;
 
@@ -270,6 +337,10 @@ export function HomeScreen() {
   const pageAnim = useEntranceAnim(60, 16);
 
   useEffect(() => {
+    // Avoid fighting the user. If the user has panned/zoomed, do not override their view.
+    if (userInteractedRef.current) {
+      return;
+    }
     setMapRegion(territoryRegion);
   }, [
     territoryRegion.latitude,
@@ -277,6 +348,43 @@ export function HomeScreen() {
     territoryRegion.latitudeDelta,
     territoryRegion.longitudeDelta,
   ]);
+
+  useEffect(() => {
+    if (!mapRef.current) {
+      return;
+    }
+    if (mapLayout.width <= 0 || mapLayout.height <= 0) {
+      return;
+    }
+    const territoryPoints = visibleTerritories.flatMap((shape) => shape.coordinates) as MapCoordinate[];
+    const fitPoints = currentLocation ? [currentLocation, ...territoryPoints] : territoryPoints;
+
+    if (fitPoints.length >= 2) {
+      mapRef.current.fitToCoordinates(fitPoints, {
+        edgePadding: { top: 34, right: 22, bottom: 34, left: 22 },
+        animated: true,
+      });
+      return;
+    }
+    if (!currentLocation) {
+      return;
+    }
+    const nextRegion: Region = {
+      latitude: currentLocation.latitude,
+      longitude: currentLocation.longitude,
+      latitudeDelta: 0.008,
+      longitudeDelta: 0.008,
+    };
+    setMapRegion(nextRegion);
+    mapRef.current.animateToRegion(nextRegion, 650);
+  }, [visibleTerritories, currentLocation, mapLayout.width, mapLayout.height]);
+
+  useEffect(() => {
+    if (!currentLocation) {
+      return;
+    }
+    revealAroundPoints([currentLocation]);
+  }, [currentLocation, revealAroundPoints]);
 
   useEffect(() => {
     if (!currentLocation || territory) {
@@ -380,10 +488,25 @@ export function HomeScreen() {
                 setMapLayout({ width, height });
               }}
             >
+              <Pressable
+                onPress={() => navigation.navigate("MapPop")}
+                hitSlop={10}
+                style={({ pressed }) => [styles.mapExpandBtn, pressed && styles.pressed]}
+              >
+                <MaterialCommunityIcons name="arrow-expand" size={16} color="#fff" />
+              </Pressable>
               <MapView
+                ref={mapRef}
                 style={styles.map}
-                region={mapRegion}
-                onRegionChangeComplete={setMapRegion}
+                initialRegion={territoryRegion}
+                onRegionChangeComplete={(region, details: any) => {
+                  setMapRegion(region);
+                  if (details?.isGesture) {
+                    userInteractedRef.current = true;
+                  }
+                }}
+                showsUserLocation
+                showsMyLocationButton
                 onUserLocationChange={(event) => {
                   const nextLocation = event.nativeEvent.coordinate;
                   if (!nextLocation) {
@@ -395,7 +518,7 @@ export function HomeScreen() {
                   });
                 }}
               >
-                {allTerritories.map((shape, index) => {
+                {visibleTerritories.map((shape, index) => {
                   const isOwn = !!user && shape.userId === user.uid;
                   const colors = getColorForUser(shape.userId, isOwn);
                   return (
@@ -414,11 +537,12 @@ export function HomeScreen() {
                   width={mapLayout.width}
                   height={mapLayout.height}
                   region={mapRegion}
-                  revealPolygons={allTerritories.map((shape) => shape.coordinates)}
+                  revealPoints={revealPoints}
+                  revealPolygons={visibleTerritories.map((shape) => shape.coordinates)}
                 />
               ) : null}
             </View>
-            <Text style={styles.hint}>Territories shown: {allTerritories.length}</Text>
+            <Text style={styles.hint}>Territories shown: {visibleTerritories.length}</Text>
             <Text style={styles.hint}>
               {`Fog active. ${exploredCount} tiles explored${fogLoading ? "..." : "."}`}
             </Text>
@@ -638,8 +762,22 @@ const styles = StyleSheet.create({
   metaValue: { color: "#E5E7EB", fontSize: 12, fontWeight: "700", flexShrink: 1, textAlign: "right" },
 
   mapWrap: { marginTop: 12, gap: 8 },
-  mapClip: { borderRadius: 12, overflow: "hidden" },
-  map: { width: "100%", height: 170 },
+  mapClip: { borderRadius: 12, overflow: "hidden", position: "relative" },
+  map: { width: "100%", height: 220 },
+  mapExpandBtn: {
+    position: "absolute",
+    zIndex: 5,
+    right: 10,
+    top: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.14)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
 
   startBtn: {
     width: "100%",
