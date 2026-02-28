@@ -160,3 +160,27 @@ export function subscribeFriends(
     }
   );
 }
+
+export async function fetchFriends(currentUserId: string): Promise<FriendRow[]> {
+  const friendsQuery = query(collection(db, "users", currentUserId, "friends"), orderBy("username", "asc"));
+  const snapshot = await getDocs(friendsQuery);
+  return snapshot.docs.map((docSnap) => {
+    const data = docSnap.data() as {
+      uid?: unknown;
+      username?: unknown;
+      email?: unknown;
+      addedAt?: unknown;
+    };
+    const uid = typeof data.uid === "string" ? data.uid : docSnap.id;
+    const username =
+      typeof data.username === "string" && data.username.trim().length > 0
+        ? data.username
+        : `Runner ${uid.slice(0, 6)}`;
+    return {
+      uid,
+      username,
+      email: typeof data.email === "string" ? data.email : "",
+      addedAt: getDate(data.addedAt),
+    };
+  });
+}

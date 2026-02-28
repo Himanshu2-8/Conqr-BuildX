@@ -7,8 +7,8 @@ import { RunScreen } from "../RunScreen";
 import { LeaderboardScreen } from "../Leaderboard";
 import { QuestsScreen } from "../Quests";
 import { ProfileScreen } from "../Profile";
-import { MapPopScreen } from "../MapPop";
 import { FriendsScreen } from "../Friends";
+import { MapPopScreen } from "../MapPop";
 import { AppLogo } from "../ui/AppLogo";
 
 const Stack = createNativeStackNavigator();

@@ -14,6 +14,13 @@ import { fetchDashboardSummary, type DashboardSummary } from "./services/dashboa
 import { subscribeAllTerritories, fetchUsernamesForUserIds, type TerritoryState } from "./services/territory";
 import { subscribeLeaderboard, type LeaderboardRow } from "./services/leaderboard";
 import { fetchMissionsSummary, type QuestProgress } from "./services/missions";
+import {
+  fetchActivePrediction,
+  fetchPredictionHistory,
+  formatPredictionValue,
+  getMetricLabel,
+  type Prediction,
+} from "./services/predictions";
 import { LiveBadge } from "./ui/LiveBadge";
 import { fetchUserProfile } from "./services/profile";
 
@@ -175,6 +182,8 @@ export function HomeScreen() {
   const [mapRegion, setMapRegion] = React.useState<Region>(FALLBACK_REGION);
   const [currentLocation, setCurrentLocation] = React.useState<MapCoordinate | null>(null);
   const [mapLayout, setMapLayout] = React.useState({ width: 0, height: 0 });
+  const [activePrediction, setActivePrediction] = React.useState<Prediction | null>(null);
+  const [recentPredictions, setRecentPredictions] = React.useState<Prediction[]>([]);
 
   useEffect(() => {
     if (!user) {
@@ -312,6 +321,23 @@ export function HomeScreen() {
     };
   }, [user]);
 
+  // ── Fetch prediction data ────────────────────────────────────
+  useEffect(() => {
+    if (!user) {
+      setActivePrediction(null);
+      setRecentPredictions([]);
+      return;
+    }
+    let active = true;
+    fetchActivePrediction(user.uid)
+      .then((pred) => { if (active) setActivePrediction(pred); })
+      .catch(() => {});
+    fetchPredictionHistory(user.uid, 3)
+      .then((preds) => { if (active) setRecentPredictions(preds); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [user]);
+
   const name = profileUsername.trim() || user?.displayName || "Runner";
   const allRegion = getRegionFromTerritories(allTerritories);
   const territoryRegion = allRegion ?? (territory?.coordinates ? getRegionFromPolygon(territory.coordinates) : FALLBACK_REGION);
@@ -340,18 +366,9 @@ export function HomeScreen() {
     others.sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0));
     return [...own, ...others];
   }, [visibleTerritories, user]);
-  const territoryRevealPoints = React.useMemo(
-    () => visibleTerritories.flatMap((shape) => shape.coordinates),
-    [visibleTerritories]
-  );
-  const extraRevealPoints = React.useMemo(
-    () => (currentLocation ? [currentLocation, ...territoryRevealPoints] : territoryRevealPoints),
-    [currentLocation, territoryRevealPoints]
-  );
-  const { fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
+  const { fogEnabled, exploredCount, loading: fogLoading } = useFogOfWar(
     user?.uid ?? null,
-    mapRegion,
-    extraRevealPoints
+    mapRegion
   );
   const totalKm = summary ? summary.totalDistanceM / 1000 : 0;
 
@@ -420,13 +437,6 @@ export function HomeScreen() {
     setMapRegion(nextRegion);
     mapRef.current.animateToRegion(nextRegion, 650);
   }, [visibleTerritories, currentLocation, mapLayout.width, mapLayout.height]);
-
-  useEffect(() => {
-    if (!currentLocation) {
-      return;
-    }
-    revealAroundPoints([currentLocation]);
-  }, [currentLocation, revealAroundPoints]);
 
   useEffect(() => {
     if (!currentLocation || territory) {
@@ -547,8 +557,6 @@ export function HomeScreen() {
                     userInteractedRef.current = true;
                   }
                 }}
-                showsUserLocation
-                showsMyLocationButton
                 onUserLocationChange={(event) => {
                   const nextLocation = event.nativeEvent.coordinate;
                   if (!nextLocation) {
@@ -638,6 +646,58 @@ export function HomeScreen() {
           </View>
           <Text style={styles.startText}>Start Run</Text>
         </Pressable>
+
+        {/* ── Prediction summary card ──────────────────────────────── */}
+        {(activePrediction || recentPredictions.length > 0) && (
+          <GradientCard>
+            <View style={styles.cardHeader}>
+              <View style={[styles.iconBox, { backgroundColor: "rgba(251,191,36,0.12)" }]}>
+                <MaterialCommunityIcons name="lightning-bolt" size={18} color="#FBBF24" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardTitle}>Predictions</Text>
+                <Text style={styles.hint}>Stake territory on your next run</Text>
+              </View>
+            </View>
+
+            {activePrediction && (
+              <View style={predStyles.activeCard}>
+                <Text style={predStyles.activeLabel}>ACTIVE</Text>
+                <Text style={predStyles.activeTarget}>
+                  {getMetricLabel(activePrediction.metric)}: {formatPredictionValue(activePrediction.metric, activePrediction.predictedValue)}
+                </Text>
+                <View style={predStyles.stakeRow}>
+                  <Text style={predStyles.risk}>⚠ {Math.round(activePrediction.stakeAreaM2).toLocaleString()} m² at risk</Text>
+                  <Text style={predStyles.bonus}>✦ +{Math.round(activePrediction.bonusAreaM2).toLocaleString()} m²</Text>
+                </View>
+              </View>
+            )}
+
+            {recentPredictions.length > 0 && (
+              <View style={{ gap: 6, marginTop: activePrediction ? 10 : 0 }}>
+                <Text style={[styles.hint, { fontSize: 11, textTransform: "uppercase", letterSpacing: 1 }]}>Recent</Text>
+                {recentPredictions.map((pred) => (
+                  <View key={pred.id} style={predStyles.historyRow}>
+                    <MaterialCommunityIcons
+                      name={pred.status === "hit" ? "check-circle" : pred.status === "missed" ? "close-circle" : "clock-outline"}
+                      size={14}
+                      color={pred.status === "hit" ? "#34D399" : pred.status === "missed" ? "#FB7185" : "#9CA3AF"}
+                    />
+                    <Text style={predStyles.historyText} numberOfLines={1}>
+                      {getMetricLabel(pred.metric)}: {formatPredictionValue(pred.metric, pred.predictedValue)}
+                    </Text>
+                    <Text style={[
+                      predStyles.historyStatus,
+                      { color: pred.status === "hit" ? "#34D399" : pred.status === "missed" ? "#FB7185" : "#9CA3AF" },
+                    ]}>
+                      {pred.status === "hit" ? "HIT" : pred.status === "missed" ? "MISS" : pred.status.toUpperCase()}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </GradientCard>
+        )}
 
         <GradientCard>
           <View style={styles.cardHeader}>
@@ -985,22 +1045,57 @@ const styles = StyleSheet.create({
   },
 });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+const predStyles = StyleSheet.create({
+  activeCard: {
+    borderWidth: 1,
+    borderColor: "rgba(251,191,36,0.35)",
+    borderRadius: 10,
+    padding: 10,
+    gap: 4,
+    backgroundColor: "rgba(251,191,36,0.06)",
+    marginTop: 6,
+  },
+  activeLabel: {
+    color: "#FBBF24",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+  },
+  activeTarget: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  stakeRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 2,
+  },
+  risk: {
+    color: "#FB7185",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  bonus: {
+    color: "#34D399",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  historyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 3,
+  },
+  historyText: {
+    flex: 1,
+    color: "#D1D5DB",
+    fontSize: 12,
+  },
+  historyStatus: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+});
 
