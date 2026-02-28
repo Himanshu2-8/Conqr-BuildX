@@ -664,7 +664,7 @@ export function HomeScreen() {
               <View style={predStyles.activeCard}>
                 <Text style={predStyles.activeLabel}>ACTIVE</Text>
                 <Text style={predStyles.activeTarget}>
-                  {getMetricLabel(activePrediction.metric)}: {formatPredictionValue(activePrediction.metric, activePrediction.targetValue)}
+                  {getMetricLabel(activePrediction.metric)}: {formatPredictionValue(activePrediction.metric, activePrediction.predictedValue)}
                 </Text>
                 <View style={predStyles.stakeRow}>
                   <Text style={predStyles.risk}>⚠ {Math.round(activePrediction.stakeAreaM2).toLocaleString()} m² at risk</Text>
@@ -684,7 +684,7 @@ export function HomeScreen() {
                       color={pred.status === "hit" ? "#34D399" : pred.status === "missed" ? "#FB7185" : "#9CA3AF"}
                     />
                     <Text style={predStyles.historyText} numberOfLines={1}>
-                      {getMetricLabel(pred.metric)}: {formatPredictionValue(pred.metric, pred.targetValue)}
+                      {getMetricLabel(pred.metric)}: {formatPredictionValue(pred.metric, pred.predictedValue)}
                     </Text>
                     <Text style={[
                       predStyles.historyStatus,
@@ -796,6 +796,10 @@ export function HomeScreen() {
         <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Friends")}>
           <MaterialCommunityIcons name="account-multiple-outline" size={16} color="#FCA5A5" />
           <Text style={styles.footerBtnText}>Friends</Text>
+        </Pressable>
+        <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Profile")}>
+          <MaterialCommunityIcons name="account-circle-outline" size={16} color="#FCA5A5" />
+          <Text style={styles.footerBtnText}>Profile</Text>
         </Pressable>
         <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Leaderboard")}>
           <MaterialCommunityIcons name="trophy" size={16} color="#FCA5A5" />

@@ -367,7 +367,7 @@ export function RunScreen() {
               <Text style={styles.predictionTitle}>Active Prediction</Text>
             </View>
             <Text style={styles.predictionMetric}>
-              {getMetricLabel(activePrediction.metric)}: {formatPredictionValue(activePrediction.metric, activePrediction.targetValue)}
+              {getMetricLabel(activePrediction.metric)}: {formatPredictionValue(activePrediction.metric, activePrediction.predictedValue)}
             </Text>
             <View style={styles.predictionStakes}>
               <Text style={styles.stakeRisk}>⚠ At risk: {Math.round(activePrediction.stakeAreaM2).toLocaleString()} m²</Text>
@@ -410,7 +410,7 @@ export function RunScreen() {
               </Text>
             </View>
             <Text style={styles.predictionMetric}>
-              Target: {formatPredictionValue(predictionResult.metric, predictionResult.targetValue)}
+              Target: {formatPredictionValue(predictionResult.metric, predictionResult.predictedValue)}
               {"  →  "}
               Actual: {predictionResult.actualValue != null
                 ? formatPredictionValue(predictionResult.metric, predictionResult.actualValue)
@@ -492,9 +492,10 @@ export function RunScreen() {
 
       <PredictionModal
         visible={showPredictionModal}
+        userId={user?.uid ?? ""}
         onClose={() => setShowPredictionModal(false)}
-        currentTerritoryM2={territory?.areaM2 ?? 0}
-        onPredictionCreated={(prediction) => {
+        currentTotalAreaM2={territory?.areaM2 ?? 0}
+        onCreated={(prediction) => {
           setActivePrediction(prediction);
           setShowPredictionModal(false);
         }}
