@@ -73,9 +73,16 @@ export function RunScreen() {
     () => points.map((point) => ({ latitude: point.latitude, longitude: point.longitude })),
     [points]
   );
+  const territoryRevealPoints = useMemo(
+    () => allTerritories.flatMap((shape) => shape.coordinates),
+    [allTerritories]
+  );
   const extraRevealPoints = useMemo(
-    () => (currentLocation ? [currentLocation, ...routeCoordinates] : routeCoordinates),
-    [currentLocation, routeCoordinates]
+    () =>
+      currentLocation
+        ? [currentLocation, ...routeCoordinates, ...territoryRevealPoints]
+        : [...routeCoordinates, ...territoryRevealPoints],
+    [currentLocation, routeCoordinates, territoryRevealPoints]
   );
   const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
     user?.uid ?? null,

@@ -239,9 +239,13 @@ export function HomeScreen() {
   const name = user?.displayName || "Runner";
   const allRegion = getRegionFromTerritories(allTerritories);
   const territoryRegion = allRegion ?? (territory?.coordinates ? getRegionFromPolygon(territory.coordinates) : FALLBACK_REGION);
+  const territoryRevealPoints = React.useMemo(
+    () => allTerritories.flatMap((shape) => shape.coordinates),
+    [allTerritories]
+  );
   const extraRevealPoints = React.useMemo(
-    () => (currentLocation ? [currentLocation] : []),
-    [currentLocation]
+    () => (currentLocation ? [currentLocation, ...territoryRevealPoints] : territoryRevealPoints),
+    [currentLocation, territoryRevealPoints]
   );
   const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
     user?.uid ?? null,

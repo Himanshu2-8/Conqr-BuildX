@@ -275,12 +275,57 @@ function isLatLngPoint(value: unknown): value is LatLngPoint {
   return typeof point.latitude === "number" && typeof point.longitude === "number";
 }
 
-function normalizeStoredCoordinates(raw: unknown): LatLngPoint[] | null {
-  if (!Array.isArray(raw)) {
+function parsePoint(value: unknown): LatLngPoint | null {
+  if (Array.isArray(value) && value.length >= 2) {
+    const maybeLng = value[0];
+    const maybeLat = value[1];
+    if (typeof maybeLng === "number" && typeof maybeLat === "number") {
+      return { latitude: maybeLat, longitude: maybeLng };
+    }
     return null;
   }
-  const coords = raw.filter(isLatLngPoint);
-  return coords.length >= 4 ? coords : null;
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const point = value as {
+    latitude?: unknown;
+    longitude?: unknown;
+    lat?: unknown;
+    lng?: unknown;
+    _latitude?: unknown;
+    _longitude?: unknown;
+  };
+
+  if (typeof point.latitude === "number" && typeof point.longitude === "number") {
+    return { latitude: point.latitude, longitude: point.longitude };
+  }
+  if (typeof point.lat === "number" && typeof point.lng === "number") {
+    return { latitude: point.lat, longitude: point.lng };
+  }
+  if (typeof point._latitude === "number" && typeof point._longitude === "number") {
+    return { latitude: point._latitude, longitude: point._longitude };
+  }
+  return null;
+}
+
+function normalizeStoredCoordinates(raw: unknown): LatLngPoint[] | null {
+  let candidates: unknown[] = [];
+
+  if (Array.isArray(raw)) {
+    candidates = raw;
+  } else if (raw && typeof raw === "object") {
+    // Backward compatibility: some old docs stored coordinates as a map with numeric keys.
+    candidates = Object.values(raw as Record<string, unknown>);
+  } else {
+    return null;
+  }
+
+  const coords = candidates
+    .map((item) => parsePoint(item))
+    .filter((item): item is LatLngPoint => !!item && isLatLngPoint(item));
+  return coords.length >= 3 ? coords : null;
 }
 
 export async function fetchTerritory(userId: string): Promise<TerritoryState | null> {
