@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { collection, doc, documentId, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import type { TrackPoint } from "../hooks/useRunTracker";
 
@@ -9,8 +9,10 @@ type LatLngPoint = {
 
 export type TerritoryState = {
   userId?: string;
+  username?: string;
   coordinates: LatLngPoint[];
   areaM2: number;
+  updatedAt?: number; // epoch ms – used to sort territories by recency for conquest rendering
 };
 
 const DEFAULT_BUFFER_METERS = 25;
@@ -342,10 +344,20 @@ export async function fetchTerritory(userId: string): Promise<TerritoryState | n
   if (!polygon || polygon.length === 0) {
     return null;
   }
+  const rawUpdatedAt = data.updatedAt;
+  const updatedAtMs =
+    rawUpdatedAt && typeof rawUpdatedAt.toMillis === "function"
+      ? (rawUpdatedAt.toMillis() as number)
+      : typeof rawUpdatedAt === "number"
+        ? rawUpdatedAt
+        : undefined;
+
   return {
     userId,
+    username: typeof data.username === "string" ? data.username : undefined,
     coordinates: polygon,
     areaM2: typeof data.areaM2 === "number" ? data.areaM2 : 0,
+    updatedAt: updatedAtMs,
   };
 }
 
@@ -363,10 +375,20 @@ function parseTerritoriesSnapshot(snapshot: { forEach: (cb: (docSnap: any) => vo
     if (!polygon || polygon.length === 0) {
       return;
     }
+    const rawUpdatedAt = data?.updatedAt;
+    const updatedAtMs =
+      rawUpdatedAt && typeof rawUpdatedAt.toMillis === "function"
+        ? (rawUpdatedAt.toMillis() as number)
+        : typeof rawUpdatedAt === "number"
+          ? rawUpdatedAt
+          : undefined;
+
     territories.push({
       userId: typeof data?.userId === "string" ? data.userId : docSnap.id,
+      username: typeof data?.username === "string" ? data.username : undefined,
       coordinates: polygon,
       areaM2: typeof data?.areaM2 === "number" ? data.areaM2 : 0,
+      updatedAt: updatedAtMs,
     });
   });
 
@@ -388,6 +410,43 @@ export function subscribeAllTerritories(
       }
     }
   );
+}
+
+/**
+ * Batch-fetch usernames from the `users` collection for a list of user IDs.
+ * Returns a Map<userId, displayName>.
+ */
+export async function fetchUsernamesForUserIds(userIds: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const unique = [...new Set(userIds)].filter(Boolean);
+  if (unique.length === 0) return result;
+
+  // Firestore `in` queries support max 10 IDs at a time.
+  for (let i = 0; i < unique.length; i += 10) {
+    const batch = unique.slice(i, i + 10);
+    try {
+      const q = query(collection(db, "users"), where(documentId(), "in", batch));
+      const snap = await getDocs(q);
+      snap.forEach((docSnap) => {
+        const data = docSnap.data();
+        const name =
+          typeof data?.username === "string" && data.username.trim().length > 0
+            ? data.username
+            : `Runner ${docSnap.id.slice(0, 6)}`;
+        result.set(docSnap.id, name);
+      });
+    } catch {
+      // Non-critical – labels just won't appear for this batch.
+    }
+  }
+
+  // Fill in fallback for any IDs that weren't found.
+  for (const id of unique) {
+    if (!result.has(id)) {
+      result.set(id, `Runner ${id.slice(0, 6)}`);
+    }
+  }
+  return result;
 }
 
 export async function updateTerritoryForRun(userId: string, points: TrackPoint[]): Promise<TerritoryState | null> {
@@ -439,10 +498,25 @@ export async function updateTerritoryForRun(userId: string, points: TrackPoint[]
   const areaM2 = occupied.size * (grid.cell * grid.cell);
   const version = existing.exists() ? (existing.data()?.version ?? 0) + 1 : 1;
 
+  // Fetch username from users doc to embed in the territory for map labelling.
+  let username: string | undefined;
+  try {
+    const userSnap = await getDoc(doc(db, "users", userId));
+    if (userSnap.exists()) {
+      const ud = userSnap.data();
+      username = typeof ud?.username === "string" && ud.username.trim().length > 0
+        ? ud.username
+        : undefined;
+    }
+  } catch {
+    // Non-critical – territory still works without the label.
+  }
+
   await setDoc(
     territoryRef,
     {
       userId,
+      ...(username ? { username } : {}),
       coordinates: polygon,
       areaM2,
       updatedAt: serverTimestamp(),
