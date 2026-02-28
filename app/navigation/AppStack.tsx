@@ -1,11 +1,13 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { View } from "react-native";
 
 import { HomeScreen } from "../HomeScreen";
 import { RunScreen } from "../RunScreen";
 import { LeaderboardScreen } from "../Leaderboard";
 import { QuestsScreen } from "../Quests";
 import { ProfileScreen } from "../Profile";
+import { AppLogo } from "../ui/AppLogo";
 
 const Stack = createNativeStackNavigator();
 
@@ -21,6 +23,11 @@ export function AppStack() {
         contentStyle: { backgroundColor: "#000000" },
         animation: "fade_from_bottom",
         animationDuration: 260,
+        headerRight: () => (
+          <View style={{ marginRight: 6 }}>
+            <AppLogo width={44} height={24} />
+          </View>
+        ),
       }}
     >
       <Stack.Screen name="Home" component={HomeScreen} options={{ title: "Dashboard", headerShown: false }} />

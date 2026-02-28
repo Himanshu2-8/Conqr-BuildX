@@ -13,67 +13,258 @@ export type TerritoryState = {
   areaM2: number;
 };
 
-type Bounds = {
-  minLat: number;
-  maxLat: number;
-  minLng: number;
-  maxLng: number;
-};
-
 const DEFAULT_BUFFER_METERS = 25;
+const DEFAULT_CELL_SIZE_METERS = 10;
+const MAX_POLYGON_POINTS = 600;
 
 function toRadians(value: number) {
   return (value * Math.PI) / 180;
 }
 
-function metersToLatDegrees(meters: number) {
-  return meters / 111320;
+type XY = { x: number; y: number };
+
+function metersPerLngDegree(atLat: number) {
+  return 111320 * Math.cos(toRadians(atLat));
 }
 
-function metersToLngDegrees(meters: number, atLat: number) {
-  const scale = Math.cos(toRadians(atLat));
-  if (Math.abs(scale) < 0.00001) {
-    return meters / 111320;
+function projectToXY(origin: LatLngPoint, point: LatLngPoint): XY {
+  const mPerLng = metersPerLngDegree(origin.latitude);
+  const dx = (point.longitude - origin.longitude) * (Math.abs(mPerLng) < 0.00001 ? 111320 : mPerLng);
+  const dy = (point.latitude - origin.latitude) * 111320;
+  return { x: dx, y: dy };
+}
+
+function unprojectToLatLng(origin: LatLngPoint, xy: XY): LatLngPoint {
+  const mPerLng = metersPerLngDegree(origin.latitude);
+  const lng = origin.longitude + xy.x / (Math.abs(mPerLng) < 0.00001 ? 111320 : mPerLng);
+  const lat = origin.latitude + xy.y / 111320;
+  return { latitude: lat, longitude: lng };
+}
+
+function computeXYBounds(points: XY[]) {
+  let minX = points[0].x;
+  let maxX = points[0].x;
+  let minY = points[0].y;
+  let maxY = points[0].y;
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i];
+    minX = Math.min(minX, p.x);
+    maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y);
+    maxY = Math.max(maxY, p.y);
   }
-  return meters / (111320 * scale);
+  return { minX, maxX, minY, maxY };
 }
 
-function computeBounds(points: LatLngPoint[]): Bounds {
-  return points.reduce<Bounds>(
-    (acc, point) => ({
-      minLat: Math.min(acc.minLat, point.latitude),
-      maxLat: Math.max(acc.maxLat, point.latitude),
-      minLng: Math.min(acc.minLng, point.longitude),
-      maxLng: Math.max(acc.maxLng, point.longitude),
-    }),
-    {
-      minLat: points[0].latitude,
-      maxLat: points[0].latitude,
-      minLng: points[0].longitude,
-      maxLng: points[0].longitude,
+function distancePointToSegmentSq(p: XY, a: XY, b: XY) {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const apx = p.x - a.x;
+  const apy = p.y - a.y;
+  const abLenSq = abx * abx + aby * aby;
+  if (abLenSq <= 0.0000001) {
+    return apx * apx + apy * apy;
+  }
+  let t = (apx * abx + apy * aby) / abLenSq;
+  t = Math.max(0, Math.min(1, t));
+  const cx = a.x + t * abx;
+  const cy = a.y + t * aby;
+  const dx = p.x - cx;
+  const dy = p.y - cy;
+  return dx * dx + dy * dy;
+}
+
+function pointInPolygon(point: XY, polygon: XY[]) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    const intersects =
+      yi > point.y !== yj > point.y && point.x < ((xj - xi) * (point.y - yi)) / (yj - yi + 0.0) + xi;
+    if (intersects) {
+      inside = !inside;
     }
-  );
+  }
+  return inside;
 }
 
-function expandBounds(bounds: Bounds, bufferMeters: number) {
-  const midLat = (bounds.minLat + bounds.maxLat) / 2;
-  const latBuffer = metersToLatDegrees(bufferMeters);
-  const lngBuffer = metersToLngDegrees(bufferMeters, midLat);
+function removeCollinear(points: XY[]) {
+  if (points.length < 4) return points;
+  const out: XY[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const prev = points[(i - 1 + points.length) % points.length];
+    const curr = points[i];
+    const next = points[(i + 1) % points.length];
+    const v1x = curr.x - prev.x;
+    const v1y = curr.y - prev.y;
+    const v2x = next.x - curr.x;
+    const v2y = next.y - curr.y;
+    const cross = v1x * v2y - v1y * v2x;
+    if (Math.abs(cross) > 0.000001) {
+      out.push(curr);
+    }
+  }
+  return out.length >= 4 ? out : points;
+}
+
+function downsample(points: XY[], maxPoints: number) {
+  if (points.length <= maxPoints) return points;
+  const step = Math.ceil(points.length / maxPoints);
+  const out: XY[] = [];
+  for (let i = 0; i < points.length; i += step) {
+    out.push(points[i]);
+  }
+  return out.length >= 4 ? out : points.slice(0, maxPoints);
+}
+
+type Grid = {
+  originX: number;
+  originY: number;
+  cell: number;
+};
+
+function cellKey(i: number, j: number) {
+  return `${i},${j}`;
+}
+
+function toCell(grid: Grid, p: XY) {
+  const i = Math.floor((p.x - grid.originX) / grid.cell);
+  const j = Math.floor((p.y - grid.originY) / grid.cell);
+  return { i, j };
+}
+
+function cellCenter(grid: Grid, i: number, j: number): XY {
   return {
-    minLat: bounds.minLat - latBuffer,
-    maxLat: bounds.maxLat + latBuffer,
-    minLng: bounds.minLng - lngBuffer,
-    maxLng: bounds.maxLng + lngBuffer,
+    x: grid.originX + (i + 0.5) * grid.cell,
+    y: grid.originY + (j + 0.5) * grid.cell,
   };
 }
 
-function boundsToPolygon(bounds: Bounds): LatLngPoint[] {
-  return [
-    { latitude: bounds.maxLat, longitude: bounds.minLng },
-    { latitude: bounds.maxLat, longitude: bounds.maxLng },
-    { latitude: bounds.minLat, longitude: bounds.maxLng },
-    { latitude: bounds.minLat, longitude: bounds.minLng },
-  ];
+function cellCorners(grid: Grid, i: number, j: number) {
+  const x0 = grid.originX + i * grid.cell;
+  const y0 = grid.originY + j * grid.cell;
+  const x1 = x0 + grid.cell;
+  const y1 = y0 + grid.cell;
+  return { x0, y0, x1, y1 };
+}
+
+function rasterizeBufferedRoute(grid: Grid, route: XY[], bufferMeters: number): Set<string> {
+  const occupied = new Set<string>();
+  if (route.length < 2) {
+    return occupied;
+  }
+  const rSq = bufferMeters * bufferMeters;
+  for (let idx = 0; idx < route.length - 1; idx++) {
+    const a = route[idx];
+    const b = route[idx + 1];
+    const minX = Math.min(a.x, b.x) - bufferMeters;
+    const maxX = Math.max(a.x, b.x) + bufferMeters;
+    const minY = Math.min(a.y, b.y) - bufferMeters;
+    const maxY = Math.max(a.y, b.y) + bufferMeters;
+    const start = toCell(grid, { x: minX, y: minY });
+    const end = toCell(grid, { x: maxX, y: maxY });
+
+    for (let i = start.i; i <= end.i; i++) {
+      for (let j = start.j; j <= end.j; j++) {
+        const center = cellCenter(grid, i, j);
+        if (distancePointToSegmentSq(center, a, b) <= rSq) {
+          occupied.add(cellKey(i, j));
+        }
+      }
+    }
+  }
+  return occupied;
+}
+
+function rasterizePolygon(grid: Grid, polygon: XY[], into: Set<string>) {
+  if (polygon.length < 3) return;
+  const { minX, maxX, minY, maxY } = computeXYBounds(polygon);
+  const start = toCell(grid, { x: minX, y: minY });
+  const end = toCell(grid, { x: maxX, y: maxY });
+  for (let i = start.i; i <= end.i; i++) {
+    for (let j = start.j; j <= end.j; j++) {
+      const center = cellCenter(grid, i, j);
+      if (pointInPolygon(center, polygon)) {
+        into.add(cellKey(i, j));
+      }
+    }
+  }
+}
+
+function polygonArea(points: XY[]) {
+  let sum = 0;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    sum += (points[j].x + points[i].x) * (points[j].y - points[i].y);
+  }
+  return sum / 2;
+}
+
+function buildBoundaryPolygon(grid: Grid, occupied: Set<string>): XY[] | null {
+  if (occupied.size === 0) return null;
+
+  // Build directed boundary edges around occupied cells (CCW).
+  const nextMap = new Map<string, string[]>();
+  const addEdge = (sx: number, sy: number, ex: number, ey: number) => {
+    const s = `${sx.toFixed(3)},${sy.toFixed(3)}`;
+    const e = `${ex.toFixed(3)},${ey.toFixed(3)}`;
+    const list = nextMap.get(s);
+    if (list) list.push(e);
+    else nextMap.set(s, [e]);
+  };
+
+  const has = (i: number, j: number) => occupied.has(cellKey(i, j));
+
+  occupied.forEach((key) => {
+    const [iStr, jStr] = key.split(",");
+    const i = Number(iStr);
+    const j = Number(jStr);
+    const { x0, y0, x1, y1 } = cellCorners(grid, i, j);
+
+    // north
+    if (!has(i, j + 1)) addEdge(x0, y1, x1, y1);
+    // east
+    if (!has(i + 1, j)) addEdge(x1, y1, x1, y0);
+    // south
+    if (!has(i, j - 1)) addEdge(x1, y0, x0, y0);
+    // west
+    if (!has(i - 1, j)) addEdge(x0, y0, x0, y1);
+  });
+
+  const loops: XY[][] = [];
+  while (nextMap.size > 0) {
+    const startKey = nextMap.keys().next().value as string;
+    let currentKey = startKey;
+    const loop: XY[] = [];
+
+    for (let guard = 0; guard < 200000; guard++) {
+      const [sx, sy] = currentKey.split(",").map(Number);
+      loop.push({ x: sx, y: sy });
+
+      const candidates = nextMap.get(currentKey);
+      if (!candidates || candidates.length === 0) {
+        nextMap.delete(currentKey);
+        break;
+      }
+      const nextKey = candidates.pop() as string;
+      if (candidates.length === 0) {
+        nextMap.delete(currentKey);
+      }
+      currentKey = nextKey;
+      if (currentKey === startKey) {
+        break;
+      }
+    }
+
+    if (loop.length >= 4) {
+      loops.push(loop);
+    }
+  }
+
+  if (loops.length === 0) return null;
+  loops.sort((a, b) => Math.abs(polygonArea(b)) - Math.abs(polygonArea(a)));
+  return loops[0];
 }
 
 function isLatLngPoint(value: unknown): value is LatLngPoint {
@@ -90,13 +281,6 @@ function normalizeStoredCoordinates(raw: unknown): LatLngPoint[] | null {
   }
   const coords = raw.filter(isLatLngPoint);
   return coords.length >= 4 ? coords : null;
-}
-
-function computeAreaMeters(bounds: Bounds) {
-  const avgLat = (bounds.minLat + bounds.maxLat) / 2;
-  const widthMeters = (bounds.maxLng - bounds.minLng) * 111320 * Math.cos(toRadians(avgLat));
-  const heightMeters = (bounds.maxLat - bounds.minLat) * 111320;
-  return Math.max(widthMeters, 0) * Math.max(heightMeters, 0);
 }
 
 export async function fetchTerritory(userId: string): Promise<TerritoryState | null> {
@@ -171,23 +355,43 @@ export async function updateTerritoryForRun(userId: string, points: TrackPoint[]
     longitude: point.longitude,
   }));
 
-  const runBounds = expandBounds(computeBounds(routePoints), DEFAULT_BUFFER_METERS);
   const territoryRef = doc(db, "territories", userId);
   const existing = await getDoc(territoryRef);
-  const existingPolygon = existing.exists() ? normalizeStoredCoordinates(existing.data()?.coordinates) : null;
-  const existingBounds = existingPolygon ? computeBounds(existingPolygon) : null;
+  const existingPolygonLatLng = existing.exists() ? normalizeStoredCoordinates(existing.data()?.coordinates) : null;
 
-  const mergedBounds = existingBounds
-    ? {
-        minLat: Math.min(existingBounds.minLat, runBounds.minLat),
-        maxLat: Math.max(existingBounds.maxLat, runBounds.maxLat),
-        minLng: Math.min(existingBounds.minLng, runBounds.minLng),
-        maxLng: Math.max(existingBounds.maxLng, runBounds.maxLng),
-      }
-    : runBounds;
+  // Build a local meter grid and union existing territory with a buffered polyline around the route.
+  const origin = (() => {
+    // Using the first point keeps numeric stability; everything is local-meter space.
+    const first = routePoints[0];
+    return { latitude: first.latitude, longitude: first.longitude };
+  })();
 
-  const polygon = boundsToPolygon(mergedBounds);
-  const areaM2 = computeAreaMeters(mergedBounds);
+  const routeXY = routePoints.map((p) => projectToXY(origin, p));
+  const existingXY = existingPolygonLatLng ? existingPolygonLatLng.map((p) => projectToXY(origin, p)) : null;
+
+  const allForBounds = existingXY ? routeXY.concat(existingXY) : routeXY;
+  const bounds = computeXYBounds(allForBounds);
+  const pad = DEFAULT_BUFFER_METERS + DEFAULT_CELL_SIZE_METERS * 2;
+
+  const grid: Grid = {
+    cell: DEFAULT_CELL_SIZE_METERS,
+    originX: Math.floor((bounds.minX - pad) / DEFAULT_CELL_SIZE_METERS) * DEFAULT_CELL_SIZE_METERS,
+    originY: Math.floor((bounds.minY - pad) / DEFAULT_CELL_SIZE_METERS) * DEFAULT_CELL_SIZE_METERS,
+  };
+
+  const occupied = rasterizeBufferedRoute(grid, routeXY, DEFAULT_BUFFER_METERS);
+  if (existingXY && existingXY.length >= 3) {
+    rasterizePolygon(grid, existingXY, occupied);
+  }
+
+  const boundary = buildBoundaryPolygon(grid, occupied);
+  if (!boundary) {
+    return null;
+  }
+
+  const cleaned = downsample(removeCollinear(boundary), MAX_POLYGON_POINTS);
+  const polygon = cleaned.map((p) => unprojectToLatLng(origin, p));
+  const areaM2 = occupied.size * (grid.cell * grid.cell);
   const version = existing.exists() ? (existing.data()?.version ?? 0) + 1 : 1;
 
   await setDoc(

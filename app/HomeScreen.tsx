@@ -6,8 +6,10 @@ import MapView, { Polygon, type Region } from "react-native-maps";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
+import { FogOverlay } from "./components/FogOverlay";
 import { useAuth } from "./context/AuthContext";
 import { useEntranceAnim } from "./hooks/useEntranceAnim";
+import { useFogOfWar } from "./hooks/useFogOfWar";
 import { fetchDashboardSummary, type DashboardSummary } from "./services/dashboard";
 import { subscribeAllTerritories, type TerritoryState } from "./services/territory";
 import { subscribeLeaderboard, type LeaderboardRow } from "./services/leaderboard";
@@ -103,6 +105,11 @@ function GradientBox({ children, style }: { children: React.ReactNode; style?: o
   );
 }
 
+type MapCoordinate = {
+  latitude: number;
+  longitude: number;
+};
+
 export function HomeScreen() {
   const { user, signOut } = useAuth();
   const navigation = useNavigation<any>();
@@ -123,6 +130,9 @@ export function HomeScreen() {
   const [missionsError, setMissionsError] = React.useState<string | null>(null);
   const [territoryUpdatedAt, setTerritoryUpdatedAt] = React.useState<Date | null>(null);
   const [leaderboardUpdatedAt, setLeaderboardUpdatedAt] = React.useState<Date | null>(null);
+  const [mapRegion, setMapRegion] = React.useState<Region>(FALLBACK_REGION);
+  const [currentLocation, setCurrentLocation] = React.useState<MapCoordinate | null>(null);
+  const [mapLayout, setMapLayout] = React.useState({ width: 0, height: 0 });
 
   useEffect(() => {
     if (!user) {
@@ -229,6 +239,15 @@ export function HomeScreen() {
   const name = user?.displayName || "Runner";
   const allRegion = getRegionFromTerritories(allTerritories);
   const territoryRegion = allRegion ?? (territory?.coordinates ? getRegionFromPolygon(territory.coordinates) : FALLBACK_REGION);
+  const extraRevealPoints = React.useMemo(
+    () => (currentLocation ? [currentLocation] : []),
+    [currentLocation]
+  );
+  const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
+    user?.uid ?? null,
+    mapRegion,
+    extraRevealPoints
+  );
   const totalKm = summary ? summary.totalDistanceM / 1000 : 0;
 
   const lastRunText = summary?.lastRun
@@ -253,6 +272,36 @@ export function HomeScreen() {
     ? `Last updated ${leaderboardUpdatedAt.toLocaleTimeString()}`
     : "Waiting for live rankings...";
   const pageAnim = useEntranceAnim(60, 16);
+
+  useEffect(() => {
+    setMapRegion(territoryRegion);
+  }, [
+    territoryRegion.latitude,
+    territoryRegion.longitude,
+    territoryRegion.latitudeDelta,
+    territoryRegion.longitudeDelta,
+  ]);
+
+  useEffect(() => {
+    if (!currentLocation) {
+      return;
+    }
+    revealAroundPoints([currentLocation]);
+  }, [currentLocation, revealAroundPoints]);
+
+  useEffect(() => {
+    if (!currentLocation || territory) {
+      return;
+    }
+
+    setMapRegion((prev) => ({
+      ...prev,
+      latitude: currentLocation.latitude,
+      longitude: currentLocation.longitude,
+      latitudeDelta: Math.min(prev.latitudeDelta, 0.02),
+      longitudeDelta: Math.min(prev.longitudeDelta, 0.02),
+    }));
+  }, [currentLocation, territory]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -337,8 +386,30 @@ export function HomeScreen() {
           </View>
 
           <View style={styles.mapWrap}>
-            <View style={styles.mapClip}>
-              <MapView style={styles.map} region={territoryRegion}>
+            <View
+              style={styles.mapClip}
+              onLayout={(event) => {
+                const { width, height } = event.nativeEvent.layout;
+                setMapLayout({ width, height });
+              }}
+            >
+              <MapView
+                style={styles.map}
+                region={mapRegion}
+                onRegionChangeComplete={setMapRegion}
+                showsUserLocation
+                showsMyLocationButton
+                onUserLocationChange={(event) => {
+                  const nextLocation = event.nativeEvent.coordinate;
+                  if (!nextLocation) {
+                    return;
+                  }
+                  setCurrentLocation({
+                    latitude: nextLocation.latitude,
+                    longitude: nextLocation.longitude,
+                  });
+                }}
+              >
                 {allTerritories.map((shape, index) => {
                   const isOwn = !!user && shape.userId === user.uid;
                   const colors = getColorForUser(shape.userId, isOwn);
@@ -353,8 +424,23 @@ export function HomeScreen() {
                   );
                 })}
               </MapView>
+              {fogEnabled ? (
+                <FogOverlay
+                  width={mapLayout.width}
+                  height={mapLayout.height}
+                  region={mapRegion}
+                  revealPoints={revealPoints}
+                  revealPolygons={allTerritories.map((shape) => shape.coordinates)}
+                />
+              ) : null}
             </View>
             <Text style={styles.hint}>Territories shown: {allTerritories.length}</Text>
+            <Text style={styles.hint}>
+              {`Fog active. ${exploredCount} tiles explored${fogLoading ? "..." : "."}`}
+            </Text>
+            <Text style={styles.hint}>
+              {currentLocation ? "Current location visible and nearby area revealed." : "Waiting for current location..."}
+            </Text>
             <Text style={styles.hint}>{territoryLiveText}</Text>
             <Text style={styles.hint}>
               {territory?.coordinates

@@ -5,6 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../context/AuthContext";
 import { useEntranceAnim } from "../hooks/useEntranceAnim";
+import { AppLogo } from "../ui/AppLogo";
 
 export function LoginScreen() {
   const { signIn } = useAuth();
@@ -30,6 +31,7 @@ export function LoginScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <Animated.View style={[styles.brand, brandAnim]}>
+          <AppLogo width={112} height={60} />
           <Text style={styles.brandTitle}>Conqr</Text>
           <Text style={styles.brandSubtitle}>Claim your miles, one run at a time.</Text>
         </Animated.View>
