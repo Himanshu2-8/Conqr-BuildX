@@ -9,6 +9,7 @@ import {
   type LeaderboardPeriod,
   type LeaderboardRow,
 } from "./services/leaderboard";
+import { useAuth } from "./context/AuthContext";
 import { useEntranceAnim } from "./hooks/useEntranceAnim";
 import { LiveBadge } from "./ui/LiveBadge";
 
@@ -34,6 +35,21 @@ function getRankBadge(rank: number) {
   if (rank === 2) return { icon: "trophy", color: "#CBD5E1" };
   if (rank === 3) return { icon: "trophy", color: "#D97706" };
   return { icon: "medal-outline", color: "#9CA3AF" };
+}
+
+function getColorForUser(userId: string | undefined) {
+  if (!userId) {
+    return { fill: "rgba(14,165,233,0.30)", stroke: "#0284C7" };
+  }
+  const palette = [
+    { fill: "rgba(234,179,8,0.30)", stroke: "#CA8A04" },
+    { fill: "rgba(16,185,129,0.30)", stroke: "#059669" },
+    { fill: "rgba(59,130,246,0.30)", stroke: "#2563EB" },
+    { fill: "rgba(168,85,247,0.30)", stroke: "#9333EA" },
+    { fill: "rgba(249,115,22,0.30)", stroke: "#EA580C" },
+  ];
+  const hash = userId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return palette[hash % palette.length];
 }
 
 function GradientCard({ children }: { children: React.ReactNode }) {
@@ -65,6 +81,7 @@ function ToggleButton<T extends string>({ label, value, selected, onSelect }: To
 
 export function LeaderboardScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
 
   const [metric, setMetric] = useState<LeaderboardMetric>("area");
   const [period, setPeriod] = useState<LeaderboardPeriod>("daily");
@@ -164,20 +181,24 @@ export function LeaderboardScreen() {
             {rows.map((row, index) => {
               const topThree = index < 3;
               const badge = getRankBadge(row.rank);
+              const isMe = row.userId === user?.uid;
+              const userColor = isMe
+                ? { fill: "rgba(220,38,38,0.30)", stroke: "#DC2626" }
+                : getColorForUser(row.userId);
 
               return (
                 <FadeInItem key={row.userId} index={index}>
-                <View style={[styles.row, topThree && styles.rowTop]}>
+                <View style={[styles.row, topThree && styles.rowTop, { borderColor: userColor.stroke }]}>
                   <View style={styles.rankWrap}>
                     <MaterialCommunityIcons name={badge.icon as any} size={16} color={badge.color} />
                   </View>
 
-                  <View style={[styles.avatar, topThree && styles.avatarTop]}>
+                  <View style={[styles.avatar, { backgroundColor: userColor.stroke }]}>
                     <Text style={styles.avatarText}>{getInitials(row.username)}</Text>
                   </View>
 
                   <View style={styles.rowMain}>
-                    <Text style={styles.username} numberOfLines={1}>
+                    <Text style={[styles.username, { color: userColor.stroke }]} numberOfLines={1}>
                       {row.username}
                     </Text>
                     <Text style={styles.userId} numberOfLines={1}>
@@ -186,7 +207,7 @@ export function LeaderboardScreen() {
                   </View>
 
                   <View style={styles.valueWrap}>
-                    <Text style={[styles.value, topThree && styles.valueTop]}>{formatMetricValue(metric, row.value)}</Text>
+                    <Text style={[styles.value, topThree && { color: userColor.stroke }]}>{formatMetricValue(metric, row.value)}</Text>
                   </View>
                 </View>
                 </FadeInItem>
