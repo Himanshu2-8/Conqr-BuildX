@@ -4,6 +4,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 // @ts-ignore react-native-maps types are resolved at runtime in this Expo app
 import MapView, { Polygon, Polyline, type Region } from "react-native-maps";
+import { FogOverlay } from "./components/FogOverlay";
+import { useFogOfWar } from "./hooks/useFogOfWar";
 import { useRunTracker } from "./hooks/useRunTracker";
 import { useAuth } from "./context/AuthContext";
 import { saveRunSession, type SaveRunResult, updateSessionClaimedArea } from "./services/runSessions";
@@ -34,6 +36,11 @@ const DEFAULT_REGION: Region = {
   longitudeDelta: 0.01,
 };
 
+type MapCoordinate = {
+  latitude: number;
+  longitude: number;
+};
+
 export function RunScreen() {
   const { user } = useAuth();
   const navigation = useNavigation<any>();
@@ -45,6 +52,9 @@ export function RunScreen() {
   const [territory, setTerritory] = React.useState<TerritoryState | null>(null);
   const [allTerritories, setAllTerritories] = React.useState<TerritoryState[]>([]);
   const [territoryLoading, setTerritoryLoading] = React.useState(false);
+  const [mapRegion, setMapRegion] = React.useState<Region>(DEFAULT_REGION);
+  const [currentLocation, setCurrentLocation] = React.useState<MapCoordinate | null>(null);
+  const [mapLayout, setMapLayout] = React.useState({ width: 0, height: 0 });
   const mapRef = useRef<MapView | null>(null);
   const pageAnim = useEntranceAnim(0, 16);
   const statsAnim = useEntranceAnim(200, 12);
@@ -52,6 +62,22 @@ export function RunScreen() {
   const routeCoordinates = useMemo(
     () => points.map((point) => ({ latitude: point.latitude, longitude: point.longitude })),
     [points]
+  );
+  const territoryRevealPoints = useMemo(
+    () => allTerritories.flatMap((shape) => shape.coordinates).slice(0, 48),
+    [allTerritories]
+  );
+  const extraRevealPoints = useMemo(
+    () =>
+      currentLocation
+        ? [currentLocation, ...routeCoordinates, ...territoryRevealPoints]
+        : [...routeCoordinates, ...territoryRevealPoints],
+    [currentLocation, routeCoordinates, territoryRevealPoints]
+  );
+  const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
+    user?.uid ?? null,
+    mapRegion,
+    extraRevealPoints
   );
 
   useEffect(() => {
@@ -78,6 +104,20 @@ export function RunScreen() {
       animated: true,
     });
   }, [routeCoordinates]);
+
+  useEffect(() => {
+    if (routeCoordinates.length === 0) {
+      return;
+    }
+    revealAroundPoints(routeCoordinates);
+  }, [revealAroundPoints, routeCoordinates]);
+
+  useEffect(() => {
+    if (!currentLocation) {
+      return;
+    }
+    revealAroundPoints([currentLocation]);
+  }, [currentLocation, revealAroundPoints]);
 
   useEffect(() => {
     if (!user) {
@@ -190,38 +230,66 @@ export function RunScreen() {
         <Text style={styles.subtitle}>Live location + active route + post-run route.</Text>
 
         <View style={styles.mapCard}>
-          <MapView
-            ref={mapRef}
-            style={styles.map}
-            initialRegion={DEFAULT_REGION}
-            showsUserLocation
-            followsUserLocation
-            showsMyLocationButton
+          <View
+            style={styles.mapViewport}
+            onLayout={(event) => {
+              const { width, height } = event.nativeEvent.layout;
+              setMapLayout({ width, height });
+            }}
           >
-            {allTerritories.map((shape, index) => {
-              const isOwn = !!user && shape.userId === user.uid;
-              return (
-                <Polygon
-                  key={`${shape.userId ?? "unknown"}-${index}`}
-                  coordinates={shape.coordinates}
-                  fillColor={isOwn ? "rgba(220,38,38,0.26)" : "rgba(156,163,175,0.18)"}
-                  strokeColor={isOwn ? "#DC2626" : "#9CA3AF"}
-                  strokeWidth={isOwn ? 2 : 1}
+            <MapView
+              ref={mapRef}
+              style={styles.map}
+              initialRegion={DEFAULT_REGION}
+              onRegionChangeComplete={setMapRegion}
+              showsUserLocation
+              followsUserLocation
+              showsMyLocationButton
+              onUserLocationChange={(event) => {
+                const nextLocation = event.nativeEvent.coordinate;
+                if (!nextLocation) {
+                  return;
+                }
+                setCurrentLocation({
+                  latitude: nextLocation.latitude,
+                  longitude: nextLocation.longitude,
+                });
+              }}
+            >
+              {allTerritories.map((shape, index) => {
+                const isOwn = !!user && shape.userId === user.uid;
+                return (
+                  <Polygon
+                    key={`${shape.userId ?? "unknown"}-${index}`}
+                    coordinates={shape.coordinates}
+                    fillColor={isOwn ? "rgba(220,38,38,0.26)" : "rgba(156,163,175,0.18)"}
+                    strokeColor={isOwn ? "#DC2626" : "#9CA3AF"}
+                    strokeWidth={isOwn ? 2 : 1}
+                  />
+                );
+              })}
+              {routeCoordinates.length >= 2 ? (
+                <Polyline
+                  coordinates={routeCoordinates}
+                  strokeColor={isRunning ? "#EF4444" : "#FCA5A5"}
+                  strokeWidth={5}
+                  lineCap="round"
+                  lineJoin="round"
                 />
-              );
-            })}
-            {routeCoordinates.length >= 2 ? (
-              <Polyline
-                coordinates={routeCoordinates}
-                strokeColor={isRunning ? "#EF4444" : "#FCA5A5"}
-                strokeWidth={5}
-                lineCap="round"
-                lineJoin="round"
-              />
+              ) : null}
+            </MapView>
+            {fogEnabled ? (
+              <FogOverlay width={mapLayout.width} height={mapLayout.height} region={mapRegion} revealPoints={revealPoints} />
             ) : null}
-          </MapView>
+          </View>
           <Text style={styles.mapCaption}>
             {isRunning ? "Current run polyline is updating live." : "Last route remains visible after finishing."}
+          </Text>
+          <Text style={styles.mapCaption}>
+            {`Fog-of-war active. ${exploredCount} tiles revealed${fogLoading ? "..." : "."}`}
+          </Text>
+          <Text style={styles.mapCaption}>
+            {currentLocation ? "Current location visible and nearby area revealed." : "Waiting for current location..."}
           </Text>
         </View>
 
@@ -347,8 +415,13 @@ const styles = StyleSheet.create({
     borderColor: "rgba(127, 29, 29, 0.30)",
     backgroundColor: "rgba(69, 10, 10, 0.22)",
   },
-  map: {
+  mapViewport: {
+    width: "100%",
     height: 240,
+    overflow: "hidden",
+  },
+  map: {
+    height: "100%",
     width: "100%",
   },
   mapCaption: {
