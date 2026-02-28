@@ -16,6 +16,7 @@ type FogOverlayProps = {
   width: number;
   height: number;
   region: Region;
+  revealPoints?: MapCoordinate[];
   revealPolygons?: MapCoordinate[][];
 };
 
@@ -47,7 +48,7 @@ function buildClouds(width: number, height: number) {
   ];
 }
 
-export function FogOverlay({ width, height, region, revealPolygons = [] }: FogOverlayProps) {
+export function FogOverlay({ width, height, region, revealPoints = [], revealPolygons = [] }: FogOverlayProps) {
   if (width <= 0 || height <= 0) {
     return null;
   }
@@ -72,6 +73,10 @@ export function FogOverlay({ width, height, region, revealPolygons = [] }: FogOv
           </RadialGradient>
           <Mask id="fogMask">
             <Rect x="0" y="0" width={width} height={height} fill="white" />
+            {revealPoints.map((point, index) => {
+              const { x, y } = toScreenPoint(point, region, width, height);
+              return <Ellipse key={`pt-${index}`} cx={x} cy={y} rx={baseRadius} ry={baseRadius} fill="black" />;
+            })}
             {revealPolygons
               .filter((polygon) => polygon.length >= 3)
               .map((polygon, index) => (
