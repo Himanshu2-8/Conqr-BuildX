@@ -298,18 +298,9 @@ export function HomeScreen() {
     const nearby = allTerritories.filter((shape) => isTerritoryNearby(shape, currentLocation, NEARBY_TERRITORY_RADIUS_M));
     return nearby.length > 0 ? nearby : [];
   }, [allTerritories, currentLocation]);
-  const territoryRevealPoints = React.useMemo(
-    () => visibleTerritories.flatMap((shape) => shape.coordinates),
-    [visibleTerritories]
-  );
-  const extraRevealPoints = React.useMemo(
-    () => (currentLocation ? [currentLocation, ...territoryRevealPoints] : territoryRevealPoints),
-    [currentLocation, territoryRevealPoints]
-  );
-  const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
+  const { fogEnabled, exploredCount, loading: fogLoading } = useFogOfWar(
     user?.uid ?? null,
-    mapRegion,
-    extraRevealPoints
+    mapRegion
   );
   const totalKm = summary ? summary.totalDistanceM / 1000 : 0;
 
@@ -378,13 +369,6 @@ export function HomeScreen() {
     setMapRegion(nextRegion);
     mapRef.current.animateToRegion(nextRegion, 650);
   }, [visibleTerritories, currentLocation, mapLayout.width, mapLayout.height]);
-
-  useEffect(() => {
-    if (!currentLocation) {
-      return;
-    }
-    revealAroundPoints([currentLocation]);
-  }, [currentLocation, revealAroundPoints]);
 
   useEffect(() => {
     if (!currentLocation || territory) {
@@ -537,7 +521,6 @@ export function HomeScreen() {
                   width={mapLayout.width}
                   height={mapLayout.height}
                   region={mapRegion}
-                  revealPoints={revealPoints}
                   revealPolygons={visibleTerritories.map((shape) => shape.coordinates)}
                 />
               ) : null}
@@ -657,9 +640,9 @@ export function HomeScreen() {
           <MaterialCommunityIcons name="flag-checkered" size={16} color="#FCA5A5" />
           <Text style={styles.footerBtnText}>Quests</Text>
         </Pressable>
-        <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Profile")}>
-          <MaterialCommunityIcons name="account-circle-outline" size={16} color="#FCA5A5" />
-          <Text style={styles.footerBtnText}>Profile</Text>
+        <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Friends")}>
+          <MaterialCommunityIcons name="account-multiple-outline" size={16} color="#FCA5A5" />
+          <Text style={styles.footerBtnText}>Friends</Text>
         </Pressable>
         <Pressable style={styles.footerBtn} onPress={() => navigation.navigate("Leaderboard")}>
           <MaterialCommunityIcons name="trophy" size={16} color="#FCA5A5" />

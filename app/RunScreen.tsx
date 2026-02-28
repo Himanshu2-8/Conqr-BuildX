@@ -84,29 +84,10 @@ export function RunScreen() {
       animated: true,
     });
   }, [allTerritories, isRunning, routeCoordinates.length]);
-  const territoryRevealPoints = useMemo(
-    () => allTerritories.flatMap((shape) => shape.coordinates),
-    [allTerritories]
-  );
-  const extraRevealPoints = useMemo(
-    () =>
-      currentLocation
-        ? [currentLocation, ...routeCoordinates, ...territoryRevealPoints]
-        : [...routeCoordinates, ...territoryRevealPoints],
-    [currentLocation, routeCoordinates, territoryRevealPoints]
-  );
-  const { revealPoints, fogEnabled, exploredCount, loading: fogLoading, revealAroundPoints } = useFogOfWar(
+  const { fogEnabled, exploredCount, loading: fogLoading } = useFogOfWar(
     user?.uid ?? null,
-    mapRegion,
-    extraRevealPoints
+    mapRegion
   );
-
-  useEffect(() => {
-    if (!currentLocation) {
-      return;
-    }
-    revealAroundPoints([currentLocation]);
-  }, [currentLocation, revealAroundPoints]);
 
   useEffect(() => {
     if (!mapRef.current || routeCoordinates.length === 0) {
@@ -294,7 +275,6 @@ export function RunScreen() {
                 width={mapLayout.width}
                 height={mapLayout.height}
                 region={mapRegion}
-                revealPoints={revealPoints}
                 revealPolygons={allTerritories.map((shape) => shape.coordinates)}
               />
             ) : null}
